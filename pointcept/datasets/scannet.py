@@ -19,7 +19,6 @@ from .builder import DATASETS
 from .transform import Compose, TRANSFORMS
 from .preprocessing.scannet.meta_data.scannet200_constants import VALID_CLASS_IDS_20, VALID_CLASS_IDS_200
 
-
 @DATASETS.register_module()
 class ScanNetDataset(Dataset):
     class2id = np.array(VALID_CLASS_IDS_20)

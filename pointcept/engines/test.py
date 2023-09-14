@@ -17,8 +17,12 @@ from pointcept.utils.logger import get_root_logger
 from pointcept.utils.misc import AverageMeter, intersection_and_union, intersection_and_union_gpu, make_dirs
 from pointcept.datasets.utils import collate_fn
 import pointcept.utils.comm as comm
+from pointcept.utils.grounding_evaluator import GroundingEvaluator
+from pointcept.models.losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
 
 TEST = Registry("test")
+import os 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 @TEST.register_module()
@@ -293,3 +297,95 @@ class PartSegTester(object):
     @staticmethod
     def collate_fn(batch):
         return collate_fn(batch)
+    
+
+
+@TEST.register_module()
+class GroundingTester(object):
+
+    def __call__(self, cfg, test_loader, model):
+        logger = get_root_logger()
+        logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
+
+        matcher = HungarianMatcher(1, 0, 2, True)
+        losses = ['boxes', 'labels', 'contrastive_align', 'masks']
+        set_criterion = SetCriterion(
+                matcher=matcher,
+                losses=losses, eos_coef=0.1, temperature=0.07)
+        criterion = compute_hungarian_loss
+        prefixes = ['last_', 'proposal_']
+        prefixes += [f'{i}head_' for i in range(6 - 1)]
+        evaluator = GroundingEvaluator(
+            only_root=True, thresholds=[0.25, 0.5],     # TODO only_root=True
+            topks=[1, 5, 10], prefixes=prefixes,
+            filter_non_gt_boxes=False,
+            logger=logger
+        )
+        for batch_idx, batch_data in enumerate(test_loader):
+            # note forward and compute loss
+            
+            batch_data = self._to_gpu(batch_data)
+            inputs = self._get_inputs(batch_data)
+            if "train" not in inputs:
+                inputs.update({"train": False})
+            else:
+                inputs["train"] = False
+
+            # STEP Forward pass
+            end_points = model(inputs)
+
+            # STEP Compute loss 
+            _, end_points = criterion(
+                end_points, 6,
+                set_criterion,
+                query_points_obj_topk=5
+            )
+
+            for key in end_points:
+                if 'pred_size' in key:
+                    end_points[key] = torch.clamp(end_points[key], min=1e-6)
+
+            # Accumulate statistics and print out
+            stat_dict = {}
+            stat_dict = self._accumulate_stats(stat_dict, end_points)
+            if (batch_idx + 1) % 500 == 0:
+                logger.info(f'Eval: [{batch_idx + 1}/{len(test_loader)}]  ')
+                logger.info(''.join([
+                    f'{key} {stat_dict[key] / (float(batch_idx + 1)):.4f} \t'
+                    for key in sorted(stat_dict.keys())
+                    if 'loss' in key and 'proposal_' not in key
+                    and 'last_' not in key and 'head_' not in key
+                ]))
+
+            if evaluator is not None:
+                for prefix in prefixes:
+                    # note only consider the last layer
+                    if prefix != 'last_':
+                        continue
+
+                    # evaluation
+                    evaluator.evaluate(end_points, prefix)  
+
+            self.trainer.comm_info["current_metric_value"] = 0.0  # save for saver
+            self.trainer.comm_info["current_metric_name"] = "None"  # save for saver
+        
+        evaluator.print_stats()
+        logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
+
+    def _accumulate_stats(self, stat_dict, end_points):
+        for key in end_points:
+            if 'loss' in key or 'acc' in key or 'ratio' in key:
+                if key not in stat_dict:
+                    stat_dict[key] = 0
+                if isinstance(end_points[key], (float, int)):
+                    stat_dict[key] += end_points[key]
+                else:
+                    stat_dict[key] += end_points[key].item()
+        return stat_dict
+    
+    def _to_gpu(self, data_dict):
+        if torch.cuda.is_available():
+            for key in data_dict:
+                if isinstance(data_dict[key], torch.Tensor):
+                    data_dict[key] = data_dict[key].cuda(non_blocking=True)
+        return data_dict

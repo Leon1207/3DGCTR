@@ -2,6 +2,8 @@ import torch.nn as nn
 
 from pointcept.models.losses import build_criteria
 from .builder import MODELS, build_model
+from .losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
+import numpy as np
 
 
 @MODELS.register_module()
@@ -62,3 +64,43 @@ class DefaultClassifier(nn.Module):
             return dict(loss=loss, cls_logits=cls_logits)
         else:
             return dict(cls_logits=cls_logits)
+        
+
+@MODELS.register_module()
+class DefaultGrounder(nn.Module):
+    def __init__(self, backbone=None, criteria=None):
+        super().__init__()
+        self.backbone = build_model(backbone)
+        matcher = HungarianMatcher(1, 0, 2, True)
+        losses = ['boxes', 'labels', 'contrastive_align', 'masks']
+        self.set_criterion = SetCriterion(
+                matcher=matcher,
+                losses=losses, eos_coef=0.1, temperature=0.07)
+        self.criterion = compute_hungarian_loss
+
+    def forward(self, input_dict):
+
+        inputs = {
+            'point_clouds': input_dict['point_clouds'].float(), 
+            'text': input_dict['utterances'],                   
+            "det_boxes": input_dict['all_detected_boxes'],      
+            "det_bbox_label_mask": input_dict['all_detected_bbox_label_mask'],  
+            "det_class_ids": input_dict['all_detected_class_ids'],   
+            "superpoint": input_dict['superpoint'], 
+            "offset": input_dict['offset'],
+            "source_xzy": input_dict['source_xzy']
+        }
+        end_points = self.backbone(inputs)
+        end_points.update(input_dict)
+        # train
+        if self.training:
+            loss, end_points = self.criterion(
+            end_points, 6,
+            self.set_criterion,
+            query_points_obj_topk=5
+        )
+            return dict(loss=loss)
+        # eval
+        else:
+            self.set_criterion.eval()
+            return end_points
