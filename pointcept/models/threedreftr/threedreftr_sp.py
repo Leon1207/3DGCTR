@@ -16,7 +16,9 @@ import torch.nn as nn
 from transformers import RobertaModel, RobertaTokenizerFast
 
 from .backbone_module import Pointnet2Backbone
-# from .backbone_ptv2maxpool import PMBEMBAttn
+from .backbone_ptv2maxpool import PMBEMBAttn
+from .backbone_swin3d import Swin3DUNet
+from .backbone_spunet import SpUNetBase
 from .modules import (
     PointsObjClsModule, GeneralSamplingModule,
     ClsAgnosticPredictHead, PositionEmbeddingLearned
@@ -66,13 +68,23 @@ class ThreeDRefTR_SP(nn.Module):
         self.butd = butd
 
         # Visual encoder
-        # self.backbone_net = PMBEMBAttn(
-        #     in_channels=3,
+        
+        # self.backbone_net = Pointnet2Backbone(
+        #     input_feature_dim=input_feature_dim,
+        #     width=1
         # )
-        self.backbone_net = Pointnet2Backbone(
-            input_feature_dim=input_feature_dim,
-            width=1
+        # self.backbone_net = PMBEMBAttn(in_channels=3)
+        # self.backbone_net = SpUNetBase(in_channels=3)
+        self.backbone_net = Swin3DUNet(
+            in_channels=3,
+            base_grid_size=0.02,
+            depths=[2, 4, 9, 4, 4],
+            channels=[48, 96, 192, 384, 288],
+            num_heads=[6, 6, 12, 24, 24],
+            window_sizes=[5, 7, 7, 7, 7],
+            quant_size=4,
         )
+
         if input_feature_dim == 3 and pointnet_ckpt is not None:
             self.backbone_net.load_state_dict(torch.load(
                 pointnet_ckpt

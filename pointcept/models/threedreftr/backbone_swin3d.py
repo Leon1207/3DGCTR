@@ -12,7 +12,6 @@ from pointcept.models.utils import offset2batch, batch2offset
 class Swin3DUNet(nn.Module):
     def __init__(self,
                  in_channels,
-                 num_classes,
                  base_grid_size,
                  depths,
                  channels,
@@ -23,11 +22,11 @@ class Swin3DUNet(nn.Module):
                  up_k=3,
                  num_layers=5,
                  stem_transformer=True,
-                 down_stride=2,
-                 upsample='linear',
+                 down_stride=3,
+                 upsample='linear_attn',
                  knn_down=True,
-                 cRSE='XYZ_RGB',
-                 fp16_mode=0):
+                 cRSE='XYZ_RGB_NORM',
+                 fp16_mode=1):
         super().__init__()
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
         if knn_down:
@@ -88,13 +87,6 @@ class Swin3DUNet(nn.Module):
                      up_k=up_k, cRSE=cRSE, fp16_mode=fp16_mode)
             for i in range(num_layers - 1, 0, -1)])
 
-        self.classifier = nn.Sequential(
-            nn.Linear(channels[0], channels[0]),
-            nn.BatchNorm1d(channels[0]),
-            nn.ReLU(inplace=True),
-            nn.Linear(channels[0], num_classes)
-        )
-        self.num_classes = num_classes
         self.base_grid_size = base_grid_size
         self.init_weights()
 
@@ -104,7 +96,7 @@ class Swin3DUNet(nn.Module):
         discrete_coord_min = discrete_coord.min(0).values
         discrete_coord -= discrete_coord_min
         feat = pointcloud[..., 3:]
-        coord_feat = data_dict["coord_feat"]  # what's this?
+        coord_feat = pointcloud["coord_feat"]  # what's this?
         coord = pointcloud[..., 0:3].contiguous()
         offset = offset.int()
 
@@ -154,8 +146,9 @@ class Swin3DUNet(nn.Module):
             sp = upsample(sp, coords_sp, sp_i, coords_sp_i)
             coords_sp = coords_sp_i
 
-        output = self.classifier(sp.slice(in_field).F)
-        return output
+        end_points = {}
+
+        return end_points
 
     def init_weights(self):
         """Initialize the weights in backbone.

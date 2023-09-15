@@ -17,6 +17,7 @@ from torch_geometric.utils import scatter
 from timm.models.layers import trunc_normal_
 
 from ..utils import offset2batch
+import pointops
 
 
 class BasicBlock(spconv.SparseModule):
@@ -74,16 +75,14 @@ class BasicBlock(spconv.SparseModule):
 class SpUNetBase(nn.Module):
     def __init__(self,
                  in_channels,
-                 num_classes,
                  base_channels=32,
-                 channels=(32, 64, 128, 256, 256, 128, 96, 96),
+                 channels=(32, 64, 128, 256, 256, 128, 96, 288),
                  layers=(2, 3, 4, 6, 2, 2, 2, 2),
                  cls_mode=False):
         super().__init__()
         assert len(layers) % 2 == 0
         assert len(layers) == len(channels)
         self.in_channels = in_channels
-        self.num_classes = num_classes
         self.base_channels = base_channels
         self.channels = channels
         self.layers = layers
@@ -140,8 +139,6 @@ class SpUNetBase(nn.Module):
             dec_channels = channels[len(channels) - s - 2]
 
         final_in_channels = channels[-1] if not self.cls_mode else channels[self.num_stages - 1]
-        self.final = spconv.SubMConv3d(final_in_channels, num_classes, kernel_size=1, padding=1, bias=True) \
-            if num_classes > 0 else spconv.Identity()
         self.apply(self._init_weights)
 
     @staticmethod
@@ -158,10 +155,12 @@ class SpUNetBase(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, input_dict):
-        discrete_coord = input_dict["discrete_coord"]
-        feat = input_dict["feat"]
-        offset = input_dict["offset"]
+    def forward(self, pointcloud, offset, bss):
+        discrete_coord = torch.floor(pointcloud[..., 0:3].contiguous() / 0.02).int()
+        discrete_coord_min = discrete_coord.min(0).values
+        discrete_coord -= discrete_coord_min
+        feat = pointcloud[..., 3:]
+        offset = offset.int()
         
         batch = offset2batch(offset)
         sparse_shape = torch.add(torch.max(discrete_coord, dim=0).values, 96).tolist()
@@ -187,10 +186,41 @@ class SpUNetBase(nn.Module):
                 x = x.replace_feature(torch.cat((x.features, skip.features), dim=1))
                 x = self.dec[s](x)
 
-        x = self.final(x)
-        if self.cls_mode:
-            x = x.replace_feature(scatter(x.features, x.indices[:, 0].long(), reduce='mean', dim=0))
-        return x.features
+        # fps sample 1024 points, then assign features by ball query
+        fps_num = 1024
+        coord = pointcloud[..., 0:3].contiguous()
+        down_xyz, feats, down_offset = coord, x.features, offset
+        new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)]).cuda()
+        fps_inds = pointops.farthest_point_sampling(coord, offset, new_offset)
+        xyz = coord[fps_inds.long(), :]
+        grouped_feature, _ = pointops.ball_query_and_group(
+            feat=feats,
+            xyz=down_xyz,
+            offset=down_offset,
+            new_xyz=xyz,
+            new_offset=new_offset,
+            max_radio=0.3,
+            nsample=2)
+        # grouped_feature, _ = pointops.knn_query_and_group(
+        #     feat=feats,
+        #     xyz=down_xyz,
+        #     offset=down_offset,
+        #     new_xyz=xyz,
+        #     new_offset=new_offset,
+        #     nsample=1)
+        grouped_feature = grouped_feature.max(1)[0]
+
+        end_points = {}
+        end_points['fp2_features'] = grouped_feature.view(bss, fps_num, 288).transpose(-1, -2).contiguous()
+        end_points['fp2_xyz'] = xyz.view(bss, fps_num, 3).float()
+        
+        fps_inds = list(torch.split(fps_inds, fps_num, dim=0))
+        for b in range(bss - 1):
+            fps_inds[b + 1] = fps_inds[b + 1] - offset[b]
+        fps_inds = torch.stack(fps_inds, dim=0)
+        end_points['fp2_inds'] = fps_inds
+
+        return end_points
 
 
 class SpUNetNoSkipBase(nn.Module):
@@ -308,7 +338,5 @@ class SpUNetNoSkipBase(nn.Module):
             x = self.dec[s](x)
 
         x = self.final(x)
-
-
 
         return x.features

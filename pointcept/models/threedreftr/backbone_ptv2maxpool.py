@@ -22,8 +22,6 @@ import pointops
 from pointcept.models.builder import MODELS
 from pointcept.models.utils import offset2batch, batch2offset
 from pointcept.models.point_transformer_v2.point_transformer_v2m2_base import GVAPatchEmbed
-from .pointnet2.pointnet2_utils import furthest_point_sample, QueryAndGroup
-import torch.nn.functional as F
 import pointops
 
 
@@ -510,8 +508,8 @@ class PMBEMBAttn(nn.Module):
         end_points['fp2_xyz'] = xyz.view(bss, fps_num, 3).float()
         
         fps_inds = list(torch.split(fps_inds, fps_num, dim=0))
-        for b in range(bss):
-            fps_inds[b] = fps_inds[b] - offset[b] * b
+        for b in range(bss - 1):
+            fps_inds[b + 1] = fps_inds[b + 1] - offset[b]
         fps_inds = torch.stack(fps_inds, dim=0)
         end_points['fp2_inds'] = fps_inds
 
