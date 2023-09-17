@@ -151,7 +151,7 @@ class Swin3DUNet(nn.Module):
             coords_sp_i = coords_sp_stack.pop()
             sp = upsample(sp, coords_sp, sp_i, coords_sp_i)
             coords_sp = coords_sp_i
-
+            
         output = self.classifier(sp.slice(in_field).F)
         return output
 

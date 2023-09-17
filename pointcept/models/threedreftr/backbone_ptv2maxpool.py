@@ -382,13 +382,13 @@ class PMBEMBAttn(nn.Module):
                  patch_embed_groups=6,
                  patch_embed_neighbours=8,
                  enc_depths=(2, 2, 6, 2),
-                 enc_channels=(96, 192, 384, 512),
-                 enc_groups=(12, 24, 48, 64),
+                 enc_channels=(96, 192, 288, 288),
+                 enc_groups=(12, 24, 36, 36),
                  enc_neighbours=(16, 16, 16, 16),
                  dec_depths=(1, 1, 1, 1),
-                 dec_channels=(288, 96, 192, 384),
-                 dec_groups=(6, 12, 24, 48),
-                 dec_neighbours=(16, 16, 16, 16),
+                 dec_channels=(1, 1, 288, 288),
+                 dec_groups=(1, 1, 36, 36),
+                 dec_neighbours=(1, 1, 16, 16),
                  grid_sizes=(0.06, 0.15, 0.375, 0.9375),
                  attn_qkv_bias=True,
                  pe_multiplier=False,
@@ -476,23 +476,27 @@ class PMBEMBAttn(nn.Module):
             skips.append([points])  # record points info of current stage
 
         points = skips.pop(-1)[0]  # unpooling points info in the last enc stage
+        dec_num = 0  # only use first two layers of decoder
         for i in reversed(range(self.num_stages)):
             skip_points, cluster = skips.pop(-1)
             points = self.dec_stages[i](points, skip_points, cluster)
+            dec_num += 1
+            if dec_num == 2:
+                break
 
         # fps sample 1024 points, then assign features by ball query
         fps_num = 1024
         down_xyz, feats, down_offset = points
         new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)]).cuda()
-        fps_inds = pointops.farthest_point_sampling(coord, offset, new_offset)
-        xyz = coord[fps_inds.long(), :]
+        fps_inds = pointops.farthest_point_sampling(down_xyz, down_offset, new_offset)
+        xyz = down_xyz[fps_inds.long(), :]
         grouped_feature, _ = pointops.ball_query_and_group(
             feat=feats,
             xyz=down_xyz,
             offset=down_offset,
             new_xyz=xyz,
             new_offset=new_offset,
-            max_radio=0.3,
+            max_radio=0.2,
             nsample=2)
         # grouped_feature, _ = pointops.knn_query_and_group(
         #     feat=feats,
@@ -509,7 +513,7 @@ class PMBEMBAttn(nn.Module):
         
         fps_inds = list(torch.split(fps_inds, fps_num, dim=0))
         for b in range(bss - 1):
-            fps_inds[b + 1] = fps_inds[b + 1] - offset[b]
+            fps_inds[b + 1] = fps_inds[b + 1] - down_offset[b]
         fps_inds = torch.stack(fps_inds, dim=0)
         end_points['fp2_inds'] = fps_inds
 

@@ -482,7 +482,8 @@ class GroundingEvaluator(HookBase):
 
     def after_epoch(self):
         if self.trainer.cfg.evaluate:
-            self.eval()
+            if (self.trainer.epoch + 1) % self.trainer.cfg.eval_freq == 0:
+                self.eval()
 
     def eval(self):
         self.trainer.logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
@@ -547,8 +548,8 @@ class GroundingEvaluator(HookBase):
                     # evaluation
                     evaluator.evaluate(end_points, prefix)  
 
-            self.trainer.comm_info["current_metric_value"] = 0.0  # save for saver
-            self.trainer.comm_info["current_metric_name"] = "None"  # save for saver
+            self.trainer.comm_info["current_metric_value"] = evaluator.get_best()  # save for saver
+            self.trainer.comm_info["current_metric_name"] = "RES_mIoU"  # save for saver
             
         evaluator.print_stats()
         self.trainer.logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')

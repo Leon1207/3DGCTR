@@ -16,6 +16,7 @@ sync_bn = False
 enable_amp = False
 empty_cache = False
 find_unused_parameters = False
+eval_freq = 1
 
 mix_prob = 0
 param_dicts = None  # example: param_dicts = [dict(keyword="block", lr_scale=0.1)]

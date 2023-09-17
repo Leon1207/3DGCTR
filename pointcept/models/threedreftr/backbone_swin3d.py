@@ -8,6 +8,8 @@ from pointcept.models.swin3d.mink_layers import MinkConvBNRelu, MinkResBlock
 from pointcept.models.swin3d.swin3d_layers import GridDownsample, GridKNNDownsample, BasicLayer, Upsample
 from pointcept.models.utils import offset2batch, batch2offset
 
+import pointops
+
 
 class Swin3DUNet(nn.Module):
     def __init__(self,
@@ -86,6 +88,13 @@ class Swin3DUNet(nn.Module):
             Upsample(channels[i], channels[i - 1], num_heads[i - 1], window_sizes[i - 1], quant_size, attn=up_attn, \
                      up_k=up_k, cRSE=cRSE, fp16_mode=fp16_mode)
             for i in range(num_layers - 1, 0, -1)])
+        
+        self.final = nn.Sequential(
+            nn.Linear(channels[0], 96),
+            nn.BatchNorm1d(96),
+            nn.ReLU(inplace=True),
+            nn.Linear(96, 288)
+        )
 
         self.base_grid_size = base_grid_size
         self.init_weights()
@@ -96,17 +105,17 @@ class Swin3DUNet(nn.Module):
         discrete_coord_min = discrete_coord.min(0).values
         discrete_coord -= discrete_coord_min
         feat = pointcloud[..., 3:]
-        coord_feat = pointcloud["coord_feat"]  # what's this?
+        coord_feat = feat  # feat not contains coords, so equal
         coord = pointcloud[..., 0:3].contiguous()
         offset = offset.int()
 
         batch = offset2batch(offset)
         in_field = ME.TensorField(
-            features=torch.cat([batch.unsqueeze(-1),
-                                coord / self.base_grid_size,
-                                coord_feat / 1.001,
-                                feat
-                                ], dim=1),
+            features=torch.cat([batch.unsqueeze(-1),  # 1
+                                coord / self.base_grid_size,  # 3
+                                coord_feat / 1.001,  # 3
+                                feat  # 3
+                                ], dim=1),  # [n, 10]
             coordinates=torch.cat([batch.unsqueeze(-1).int(), discrete_coord.int()], dim=1),
             quantization_mode=ME.SparseTensorQuantizationMode.UNWEIGHTED_AVERAGE,
             minkowski_algorithm=ME.MinkowskiAlgorithm.SPEED_OPTIMIZED,
@@ -117,15 +126,15 @@ class Swin3DUNet(nn.Module):
             features=sp.F[:, :coord_feat.shape[-1] + 4],
             coordinate_map_key=sp.coordinate_map_key,
             coordinate_manager=sp.coordinate_manager,
-        )
+        )  # [n, 7], batch + coord + feat
         sp = SparseTensor(
             features=sp.F[:, coord_feat.shape[-1] + 4:],
             coordinate_map_key=sp.coordinate_map_key,
             coordinate_manager=sp.coordinate_manager,
-        )
+        )  # [n, 3], feat
         sp_stack = []
         coords_sp_stack = []
-        sp = self.stem_layer(sp)
+        sp = self.stem_layer(sp)  # [n, 48]
         if self.layer_start > 0:
             sp_stack.append(sp)
             coords_sp_stack.append(coords_sp)
@@ -133,7 +142,7 @@ class Swin3DUNet(nn.Module):
 
         for i, layer in enumerate(self.layers):
             coords_sp_stack.append(coords_sp)
-            sp, sp_down, coords_sp = layer(sp, coords_sp)
+            sp, sp_down, coords_sp = layer(sp, coords_sp)  # appear nan?
             sp_stack.append(sp)
             assert (coords_sp.C == sp_down.C).all()
             sp = sp_down
@@ -145,8 +154,41 @@ class Swin3DUNet(nn.Module):
             coords_sp_i = coords_sp_stack.pop()
             sp = upsample(sp, coords_sp, sp_i, coords_sp_i)
             coords_sp = coords_sp_i
+        
+        # fps sample 1024 points, then assign features by ball query
+        final_feat = self.final(sp.slice(in_field).F)  # [n, 288]
+        fps_num = 1024
+        coord = pointcloud[..., 0:3].contiguous()
+        down_xyz, feats, down_offset = coord, final_feat, offset
+        new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)]).cuda()
+        fps_inds = pointops.farthest_point_sampling(coord, offset, new_offset)
+        xyz = coord[fps_inds.long(), :]
+        grouped_feature, _ = pointops.ball_query_and_group(
+            feat=feats,
+            xyz=down_xyz,
+            offset=down_offset,
+            new_xyz=xyz,
+            new_offset=new_offset,
+            max_radio=0.2,
+            nsample=2)
+        # grouped_feature, _ = pointops.knn_query_and_group(
+        #     feat=feats,
+        #     xyz=down_xyz,
+        #     offset=down_offset,
+        #     new_xyz=xyz,
+        #     new_offset=new_offset,
+        #     nsample=1)
+        grouped_feature = grouped_feature.max(1)[0]
 
         end_points = {}
+        end_points['fp2_features'] = grouped_feature.view(bss, fps_num, 288).transpose(-1, -2).contiguous()
+        end_points['fp2_xyz'] = xyz.view(bss, fps_num, 3).float()
+        
+        fps_inds = list(torch.split(fps_inds, fps_num, dim=0))
+        for b in range(bss - 1):
+            fps_inds[b + 1] = fps_inds[b + 1] - offset[b]
+        fps_inds = torch.stack(fps_inds, dim=0)
+        end_points['fp2_inds'] = fps_inds
 
         return end_points
 

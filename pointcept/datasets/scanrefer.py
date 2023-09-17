@@ -78,6 +78,7 @@ class Joint3DDataset(Dataset):
         self.butd = butd
         self.butd_gt = butd_gt
         self.butd_cls = butd_cls
+        self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
             'scannet' in dataset_dict
             and len(dataset_dict.keys()) > 1
@@ -279,7 +280,7 @@ class Joint3DDataset(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader[:100]
+            for anno in reader
             if anno['scene_id'] in scan_ids
         ]
 

@@ -7,6 +7,7 @@ enable_amp = True
 num_worker = 8
 batch_size_val = 20
 batch_size_test = 20
+eval_freq = 3
 
 # model settings
 model = dict(
@@ -17,9 +18,10 @@ model = dict(
 )
 
 # scheduler settings
-epoch = 3000
+epoch = 100
+eval_epoch = 100
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[50, 75])
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset"

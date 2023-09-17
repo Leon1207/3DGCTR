@@ -17,9 +17,10 @@ model = dict(
 )
 
 # scheduler settings
-epoch = 3000
+epoch = 102
+eval_epoch = 34
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[50, 75])
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset"

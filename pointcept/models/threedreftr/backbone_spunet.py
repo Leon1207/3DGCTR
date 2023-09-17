@@ -16,7 +16,7 @@ from torch_geometric.utils import scatter
 
 from timm.models.layers import trunc_normal_
 
-from ..utils import offset2batch
+from ..utils import offset2batch, batch2offset
 import pointops
 
 
@@ -157,8 +157,7 @@ class SpUNetBase(nn.Module):
 
     def forward(self, pointcloud, offset, bss):
         discrete_coord = torch.floor(pointcloud[..., 0:3].contiguous() / 0.02).int()
-        discrete_coord_min = discrete_coord.min(0).values
-        discrete_coord -= discrete_coord_min
+        discrete_coord -= discrete_coord.min(0).values
         feat = pointcloud[..., 3:]
         offset = offset.int()
         
@@ -188,18 +187,18 @@ class SpUNetBase(nn.Module):
 
         # fps sample 1024 points, then assign features by ball query
         fps_num = 1024
-        coord = pointcloud[..., 0:3].contiguous()
-        down_xyz, feats, down_offset = coord, x.features, offset
+        coord = (x.coordinates + discrete_coord.min(0).values) * 0.02
+        down_xyz, feats, down_offset = coord, x.features, batch2offset(x.batch_size)
         new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)]).cuda()
-        fps_inds = pointops.farthest_point_sampling(coord, offset, new_offset)
-        xyz = coord[fps_inds.long(), :]
+        fps_inds = pointops.farthest_point_sampling(down_xyz, down_offset, new_offset)
+        xyz = down_xyz[fps_inds.long(), :]
         grouped_feature, _ = pointops.ball_query_and_group(
             feat=feats,
             xyz=down_xyz,
             offset=down_offset,
             new_xyz=xyz,
             new_offset=new_offset,
-            max_radio=0.3,
+            max_radio=0.2,
             nsample=2)
         # grouped_feature, _ = pointops.knn_query_and_group(
         #     feat=feats,
@@ -216,7 +215,7 @@ class SpUNetBase(nn.Module):
         
         fps_inds = list(torch.split(fps_inds, fps_num, dim=0))
         for b in range(bss - 1):
-            fps_inds[b + 1] = fps_inds[b + 1] - offset[b]
+            fps_inds[b + 1] = fps_inds[b + 1] - down_offset[b]
         fps_inds = torch.stack(fps_inds, dim=0)
         end_points['fp2_inds'] = fps_inds
 

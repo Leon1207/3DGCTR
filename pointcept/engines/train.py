@@ -94,7 +94,7 @@ class TrainerBase:
 
     def after_epoch(self):
         for h in self.hooks:
-            h.after_epoch()
+            h.after_epoch()  # eval call
         self.storage.reset_histories()
 
     def after_train(self):
