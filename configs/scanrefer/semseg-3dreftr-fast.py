@@ -20,7 +20,7 @@ model = dict(
 # scheduler settings
 epoch = 100
 eval_epoch = 100
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+optimizer = dict(type="AdamW", lr=5e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings

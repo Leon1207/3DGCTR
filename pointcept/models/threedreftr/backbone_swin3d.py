@@ -149,11 +149,15 @@ class Swin3DUNet(nn.Module):
 
         sp = sp_stack.pop()
         coords_sp = coords_sp_stack.pop()
+        dec_num = 0
         for i, upsample in enumerate(self.upsamples):
             sp_i = sp_stack.pop()
             coords_sp_i = coords_sp_stack.pop()
             sp = upsample(sp, coords_sp, sp_i, coords_sp_i)
             coords_sp = coords_sp_i
+            dec_num += 1
+            if dec_num == 2:
+                break
         
         # fps sample 1024 points, then assign features by ball query
         final_feat = self.final(sp.slice(in_field).F)  # [n, 288]

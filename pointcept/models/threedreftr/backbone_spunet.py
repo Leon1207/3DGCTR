@@ -77,7 +77,7 @@ class SpUNetBase(nn.Module):
                  in_channels,
                  base_channels=32,
                  channels=(32, 64, 128, 256, 256, 128, 96, 288),
-                 layers=(2, 3, 4, 6, 2, 2, 2, 2),
+                 layers=(2, 3, 4, 6, 2, 2, 1, 1),
                  cls_mode=False):
         super().__init__()
         assert len(layers) % 2 == 0
@@ -157,7 +157,8 @@ class SpUNetBase(nn.Module):
 
     def forward(self, pointcloud, offset, bss):
         discrete_coord = torch.floor(pointcloud[..., 0:3].contiguous() / 0.02).int()
-        discrete_coord -= discrete_coord.min(0).values
+        discrete_coord_min = discrete_coord.min(0).values
+        discrete_coord -= discrete_coord_min
         feat = pointcloud[..., 3:]
         offset = offset.int()
         
@@ -177,6 +178,7 @@ class SpUNetBase(nn.Module):
             x = self.enc[s](x)
             skips.append(x)
         x = skips.pop(-1)
+        enc_num = 0  # only use first two layers of decoder
         if not self.cls_mode:
             # dec forward
             for s in reversed(range(self.num_stages)):
@@ -184,11 +186,15 @@ class SpUNetBase(nn.Module):
                 skip = skips.pop(-1)
                 x = x.replace_feature(torch.cat((x.features, skip.features), dim=1))
                 x = self.dec[s](x)
+                # enc_num += 1
+                # if enc_num == 2:
+                #     break
 
         # fps sample 1024 points, then assign features by ball query
         fps_num = 1024
-        coord = (x.coordinates + discrete_coord.min(0).values) * 0.02
-        down_xyz, feats, down_offset = coord, x.features, batch2offset(x.batch_size)
+        # coord = (x.indices[..., 1:] + discrete_coord_min) * 0.02
+        coord = pointcloud[..., 0:3].contiguous()
+        down_xyz, feats, down_offset = coord, x.features, batch2offset(x.indices[..., 0])
         new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)]).cuda()
         fps_inds = pointops.farthest_point_sampling(down_xyz, down_offset, new_offset)
         xyz = down_xyz[fps_inds.long(), :]
