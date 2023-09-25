@@ -14,12 +14,12 @@ import pointops
 class Swin3DUNet(nn.Module):
     def __init__(self,
                  in_channels,
-                 base_grid_size,
-                 depths,
-                 channels,
-                 num_heads,
-                 window_sizes,
-                 quant_size,
+                 base_grid_size=0.02,
+                 depths=[2, 4, 9, 4, 4],
+                 channels=[48, 96, 192, 384, 384],
+                 num_heads=[6, 6, 12, 24, 24],
+                 window_sizes=[5, 7, 7, 7, 7],
+                 quant_size=4,
                  drop_path_rate=0.2,
                  up_k=3,
                  num_layers=5,
@@ -27,7 +27,7 @@ class Swin3DUNet(nn.Module):
                  down_stride=3,
                  upsample='linear_attn',
                  knn_down=True,
-                 cRSE='XYZ_RGB_NORM',
+                 cRSE='XYZ_RGB',
                  fp16_mode=1):
         super().__init__()
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
@@ -37,6 +37,7 @@ class Swin3DUNet(nn.Module):
             downsample = GridDownsample
 
         self.cRSE = cRSE
+        self.grid_scale = 0.02
         if stem_transformer:
             self.stem_layer = MinkConvBNRelu(
                 in_channels=in_channels,
@@ -90,7 +91,7 @@ class Swin3DUNet(nn.Module):
             for i in range(num_layers - 1, 0, -1)])
         
         self.final = nn.Sequential(
-            nn.Linear(channels[0], 96),
+            nn.Linear(192, 96),
             nn.BatchNorm1d(96),
             nn.ReLU(inplace=True),
             nn.Linear(96, 288)
@@ -101,37 +102,37 @@ class Swin3DUNet(nn.Module):
 
     def forward(self, pointcloud, offset, bss):
 
-        discrete_coord = torch.floor(pointcloud[..., 0:3].contiguous() / 0.02).int()
+        discrete_coord = torch.floor(pointcloud[..., 0:3].contiguous() / self.grid_scale).int()
         discrete_coord_min = discrete_coord.min(0).values
         discrete_coord -= discrete_coord_min
-        feat = pointcloud[..., 3:]
-        coord_feat = feat  # feat not contains coords, so equal
-        coord = pointcloud[..., 0:3].contiguous()
+        feat = pointcloud[..., 3:]  # [n, 3]: color
+        coord_feat = feat # [n, 3]: color
+        coord = pointcloud[..., 0:3].contiguous()  # [n, 3]
         offset = offset.int()
 
         batch = offset2batch(offset)
         in_field = ME.TensorField(
             features=torch.cat([batch.unsqueeze(-1),  # 1
                                 coord / self.base_grid_size,  # 3
-                                coord_feat / 1.001,  # 3
-                                feat  # 3
+                                coord_feat / 1.001,  # 3 (6)
+                                feat  # 3 (9)
                                 ], dim=1),  # [n, 10]
             coordinates=torch.cat([batch.unsqueeze(-1).int(), discrete_coord.int()], dim=1),
             quantization_mode=ME.SparseTensorQuantizationMode.UNWEIGHTED_AVERAGE,
             minkowski_algorithm=ME.MinkowskiAlgorithm.SPEED_OPTIMIZED,
-            device=feat.device)
+            device=feat.device)  # [n, 10] 
 
-        sp = in_field.sparse()
+        sp = in_field.sparse()  # [n', 10]
         coords_sp = SparseTensor(
             features=sp.F[:, :coord_feat.shape[-1] + 4],
             coordinate_map_key=sp.coordinate_map_key,
             coordinate_manager=sp.coordinate_manager,
-        )  # [n, 7], batch + coord + feat
+        )  # [n', 7], batch + coord + coord_feat(color)
         sp = SparseTensor(
             features=sp.F[:, coord_feat.shape[-1] + 4:],
             coordinate_map_key=sp.coordinate_map_key,
             coordinate_manager=sp.coordinate_manager,
-        )  # [n, 3], feat
+        )  # [n, 3], feat(color)
         sp_stack = []
         coords_sp_stack = []
         sp = self.stem_layer(sp)  # [n, 48]
@@ -160,11 +161,12 @@ class Swin3DUNet(nn.Module):
                 break
         
         # fps sample 1024 points, then assign features by ball query
-        final_feat = self.final(sp.slice(in_field).F)  # [n, 288]
         fps_num = 1024
+        feats = self.final(sp.F)  # [n, 192] -> [n, 288]
         coord = pointcloud[..., 0:3].contiguous()
-        down_xyz, feats, down_offset = coord, final_feat, offset
-        new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)]).cuda()
+        down_xyz = (sp.C[..., 1:] + discrete_coord_min) * self.grid_scale
+        down_offset = batch2offset(sp.C[..., 0])
+        new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)], device=feats.device)
         fps_inds = pointops.farthest_point_sampling(coord, offset, new_offset)
         xyz = coord[fps_inds.long(), :]
         grouped_feature, _ = pointops.ball_query_and_group(

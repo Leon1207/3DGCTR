@@ -444,8 +444,9 @@ class GroundingEvaluator:
                 bad_cases = ious < self.bad_case_threshold  # Here you set your bad_case_threshold
                 if bad_cases.any():
                     # Get point cloud and original color
-                    point_cloud = end_points['point_clouds'][bid]
+                    point_cloud = end_points['point_clouds']
                     og_color = end_points['og_color'][bid]
+                    point_cloud = point_cloud.view(-1, og_color.shape[0], 6)[bid]
                     point_cloud[:, 3:] = (og_color + torch.tensor([109.8, 97.2, 83.8]).cuda() / 256) * 256
                     target_name = end_points['target_name'][bid]
                     utterances = end_points['utterances'][bid]
@@ -457,9 +458,9 @@ class GroundingEvaluator:
                     gt_box = gt_bboxes[bid].cpu()
 
                     # Convert boxes to points for visualization
-                    all_boxes_points = box2points(all_bboxes[..., :6])  # all boxes
-                    gt_box = box2points(gt_box[..., :6])  # gt boxes
-                    pbox_bad_cases_points = box2points(pbox_bad_cases[..., :6])
+                    all_boxes_points = box2points(all_bboxes[..., :6].detach())  # all boxes
+                    gt_box = box2points(gt_box[..., :6].detach())  # gt boxes
+                    pbox_bad_cases_points = box2points(pbox_bad_cases[..., :6].detach())
 
                     # Log bad case visualization to wandb
                     wandb.log({
@@ -492,8 +493,9 @@ class GroundingEvaluator:
             # Check for kps points
             if self.kps_points_visualization:
                 wandb.init(project="vis", name="kps_points")
-                point_cloud = end_points['point_clouds'][bid]
+                point_cloud = end_points['point_clouds']
                 og_color = end_points['og_color'][bid]
+                point_cloud = point_cloud.view(-1, og_color.shape[0], 6)[bid]
                 point_cloud[:, 3:] = (og_color + torch.tensor([109.8, 97.2, 83.8]).cuda() / 256) * 256
                 kps_points = end_points['query_points_xyz'][bid]
                 red = torch.zeros((256, 3)).cuda()
@@ -502,7 +504,7 @@ class GroundingEvaluator:
                 total_point = torch.cat([point_cloud, kps_points], dim=0)
                 utterances = end_points['utterances'][bid]
                 gt_box = gt_bboxes[bid].cpu()
-                gt_box = box2points(gt_box[..., :6])
+                gt_box = box2points(gt_box[..., :6].detach())
 
                 wandb.log({
                         "kps_point_scene": wandb.Object3D({
@@ -808,8 +810,9 @@ class GroundingEvaluator:
             # visualization for pres mask and box
             if self.visualization_pred:
                 wandb.init(project="vis", name="pred")
-                point_cloud = end_points['point_clouds'][bid]
+                point_cloud = end_points['point_clouds']
                 og_color = end_points['og_color'][bid]
+                point_cloud = point_cloud.view(-1, og_color.shape[0], 6)[bid]
                 point_cloud[:, 3:] = (og_color + torch.tensor([109.8, 97.2, 83.8]).cuda() / 256) * 256
                 red = torch.tensor([255.0, 0.0, 0.0]).cuda()
 
@@ -818,7 +821,7 @@ class GroundingEvaluator:
                 pred_bbox = torch.cat([pred_center, pred_size], dim=-1).cpu()[top.reshape(-1)]
 
                 utterances = end_points['utterances'][bid]
-                pred_bbox = box2points(pred_bbox[..., :6])
+                pred_bbox = box2points(pred_bbox[..., :6].detach())
 
                 mask_idx = pmasks[0] == 1
                 pred_cloud = point_cloud
@@ -846,8 +849,9 @@ class GroundingEvaluator:
             # visualization for gt mask and box
             if self.visualization_gt:
                 wandb.init(project="vis", name="gt")
-                point_cloud = end_points['point_clouds'][bid]
+                point_cloud = end_points['point_clouds']
                 og_color = end_points['og_color'][bid]
+                point_cloud = point_cloud.view(-1, og_color.shape[0], 6)[bid]
                 point_cloud[:, 3:] = (og_color + torch.tensor([109.8, 97.2, 83.8]).cuda() / 256) * 256
                 blue = torch.tensor([0.0, 0.0, 255.0]).cuda()
 
@@ -856,7 +860,7 @@ class GroundingEvaluator:
                 gt_box = torch.cat([gt_center, gt_size], dim=-1).cpu()
 
                 utterances = end_points['utterances'][bid]
-                gt_box = box2points(gt_box[..., :6])
+                gt_box = box2points(gt_box[..., :6].detach())
 
                 gt_cloud = point_cloud
                 gt_mask_idx = gt_masks[bid][0] == 1

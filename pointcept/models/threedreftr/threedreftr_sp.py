@@ -73,16 +73,8 @@ class ThreeDRefTR_SP(nn.Module):
         #     width=1
         # )
         # self.backbone_net = PMBEMBAttn(in_channels=3)
-        self.backbone_net = SpUNetBase(in_channels=3)
-        # self.backbone_net = Swin3DUNet(
-        #     in_channels=3,
-        #     base_grid_size=0.02,
-        #     depths=[2, 4, 9, 4, 4],
-        #     channels=[48, 96, 192, 384, 288],
-        #     num_heads=[6, 6, 12, 24, 24],
-        #     window_sizes=[5, 7, 7, 7, 7],
-        #     quant_size=4,
-        # )
+        # self.backbone_net = SpUNetBase(in_channels=3)
+        self.backbone_net = Swin3DUNet(in_channels=3)
 
         if input_feature_dim == 3 and pointnet_ckpt is not None:
             self.backbone_net.load_state_dict(torch.load(

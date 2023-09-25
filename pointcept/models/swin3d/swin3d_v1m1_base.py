@@ -1,3 +1,6 @@
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
 import torch
 import torch.nn as nn
 import MinkowskiEngine as ME
@@ -101,10 +104,12 @@ class Swin3DUNet(nn.Module):
         self.init_weights()
 
     def forward(self, data_dict):
-        discrete_coord = data_dict["discrete_coord"]
-        feat = data_dict["feat"]
-        coord_feat = data_dict["coord_feat"]
-        coord = data_dict["coord"]
+        discrete_coord = data_dict["discrete_coord"]  # [n, 3]
+        feat = data_dict["feat"]  # [n, 9]
+        tmp1 = feat[..., :6]  # equal to coord_feat
+        tmp2 = feat[..., 6:]  # RGB? noraml?
+        coord_feat = data_dict["coord_feat"]  # [n, 6]
+        coord = data_dict["coord"]  # [n, 3]
         offset = data_dict["offset"]
         batch = offset2batch(offset)
         in_field = ME.TensorField(
@@ -116,7 +121,7 @@ class Swin3DUNet(nn.Module):
             coordinates=torch.cat([batch.unsqueeze(-1).int(), discrete_coord.int()], dim=1),
             quantization_mode=ME.SparseTensorQuantizationMode.UNWEIGHTED_AVERAGE,
             minkowski_algorithm=ME.MinkowskiAlgorithm.SPEED_OPTIMIZED,
-            device=feat.device)
+            device=feat.device)  # [n, 6]
 
         sp = in_field.sparse()
         coords_sp = SparseTensor(

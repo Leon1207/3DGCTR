@@ -488,8 +488,11 @@ class PMBEMBAttn(nn.Module):
         fps_num = 1024
         down_xyz, feats, down_offset = points
         new_offset = torch.tensor([(b + 1) * fps_num for b in range(bss)]).cuda()
-        fps_inds = pointops.farthest_point_sampling(down_xyz, down_offset, new_offset)
-        xyz = down_xyz[fps_inds.long(), :]
+        coord = pointcloud[..., 0:3].contiguous()
+        fps_inds = pointops.farthest_point_sampling(coord, offset, new_offset)
+        xyz = coord[fps_inds.long(), :]
+        # fps_inds = pointops.farthest_point_sampling(down_xyz, down_offset, new_offset)
+        # xyz = down_xyz[fps_inds.long(), :]
         grouped_feature, _ = pointops.ball_query_and_group(
             feat=feats,
             xyz=down_xyz,
@@ -513,7 +516,8 @@ class PMBEMBAttn(nn.Module):
         
         fps_inds = list(torch.split(fps_inds, fps_num, dim=0))
         for b in range(bss - 1):
-            fps_inds[b + 1] = fps_inds[b + 1] - down_offset[b]
+            fps_inds[b + 1] = fps_inds[b + 1] - offset[b]
+            # fps_inds[b + 1] = fps_inds[b + 1] - down_offset[b]
         fps_inds = torch.stack(fps_inds, dim=0)
         end_points['fp2_inds'] = fps_inds
 

@@ -1,14 +1,14 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 32 # bs: total bs in all gpus
+batch_size = 64 # bs: total bs in all gpus
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
 num_worker = 8
-batch_size_val = 8
-batch_size_test = 8
+batch_size_val = 16
+batch_size_test = 16
 find_unused_parameters = True
-eval_freq = 1
+eval_freq = 3
 
 # model settings
 model = dict(
@@ -21,7 +21,7 @@ model = dict(
 # scheduler settings
 epoch = 100
 eval_epoch = 100
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+optimizer = dict(type="AdamW", lr=1e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
