@@ -96,7 +96,8 @@ class GroundingEvaluator:
     """
 
     def __init__(self, only_root=True, thresholds=[0.25, 0.5],
-                 topks=[1, 5, 10], prefixes=[], filter_non_gt_boxes=False, logger=None):
+                 topks=[1, 5, 10], prefixes=[], filter_non_gt_boxes=False, logger=None,
+                 losses=None):
         """Initialize accumulators."""
         self.only_root = only_root
         self.thresholds = thresholds
@@ -105,6 +106,7 @@ class GroundingEvaluator:
         self.filter_non_gt_boxes = filter_non_gt_boxes
         self.reset()
         self.logger = logger
+        self.losses = losses
         self.visualization_pred = False
         self.visualization_gt = False
         self.bad_case_visualization = False
@@ -187,26 +189,27 @@ class GroundingEvaluator:
         self.logger.info('iou@0.50')
         for field in ['easy50', 'hard50', 'vd50', 'vid50', 'unique50', 'multi50']:
             self.logger.info(field + ' ' +  str(self.dets[field] / self.gts[field]))
-        self.logger.info('mask@mean iou')
-        self.logger.info('mask_pos' + ' ' +  str(self.dets['mask_pos'] / self.gts['mask_pos']))
-        self.logger.info('mask_sem' + ' ' +  str(self.dets['mask_sem'] / self.gts['mask_sem']))
-        self.logger.info('mask@kiou')
-        if self.gts['unique_num'] != 0:
-            self.logger.info('unique25' + ' ' +  str(self.dets['unique_mask'] / self.gts['unique_num']))
-            self.logger.info('unique50' + ' ' +  str(self.dets['unique50_mask'] / self.gts['unique_num']))
-            self.logger.info('multi25' + ' ' +  str(self.dets['multi_mask'] / self.gts['multi_num']))
-            self.logger.info('multi50' + ' ' +  str(self.dets['multi50_mask'] / self.gts['multi_num']))
-        self.logger.info('overall25' + ' ' +  str(self.dets['overall_mask'] / self.gts['mask_sem']))
-        self.logger.info('overall50' + ' ' +  str(self.dets['overall50_mask'] / self.gts['mask_sem']))
-        self.logger.info('mask@identity')
-        self.logger.info('vd25' + ' ' +  str(self.dets['vd_mask'] / self.gts['vd_num']))
-        self.logger.info('vd50' + ' ' +  str(self.dets['vd50_mask'] / self.gts['vd_num']))
-        self.logger.info('vid25' + ' ' +  str(self.dets['vid_mask'] / self.gts['vid_num']))
-        self.logger.info('vid50' + ' ' +  str(self.dets['vid50_mask'] / self.gts['vid_num']))
-        self.logger.info('easy25' + ' ' +  str(self.dets['easy_mask'] / self.gts['easy_num']))
-        self.logger.info('easy50' + ' ' +  str(self.dets['easy50_mask'] / self.gts['easy_num']))
-        self.logger.info('hard25' + ' ' +  str(self.dets['hard_mask'] / self.gts['hard_num']))
-        self.logger.info('hard50' + ' ' +  str(self.dets['hard50_mask'] / self.gts['hard_num']))
+        if "masks" in self.losses:
+            self.logger.info('mask@mean iou')
+            self.logger.info('mask_pos' + ' ' +  str(self.dets['mask_pos'] / self.gts['mask_pos']))
+            self.logger.info('mask_sem' + ' ' +  str(self.dets['mask_sem'] / self.gts['mask_sem']))
+            self.logger.info('mask@kiou')
+            if self.gts['unique_num'] != 0:
+                self.logger.info('unique25' + ' ' +  str(self.dets['unique_mask'] / self.gts['unique_num']))
+                self.logger.info('unique50' + ' ' +  str(self.dets['unique50_mask'] / self.gts['unique_num']))
+                self.logger.info('multi25' + ' ' +  str(self.dets['multi_mask'] / self.gts['multi_num']))
+                self.logger.info('multi50' + ' ' +  str(self.dets['multi50_mask'] / self.gts['multi_num']))
+            self.logger.info('overall25' + ' ' +  str(self.dets['overall_mask'] / self.gts['mask_sem']))
+            self.logger.info('overall50' + ' ' +  str(self.dets['overall50_mask'] / self.gts['mask_sem']))
+            self.logger.info('mask@identity')
+            self.logger.info('vd25' + ' ' +  str(self.dets['vd_mask'] / self.gts['vd_num']))
+            self.logger.info('vd50' + ' ' +  str(self.dets['vd50_mask'] / self.gts['vd_num']))
+            self.logger.info('vid25' + ' ' +  str(self.dets['vid_mask'] / self.gts['vid_num']))
+            self.logger.info('vid50' + ' ' +  str(self.dets['vid50_mask'] / self.gts['vid_num']))
+            self.logger.info('easy25' + ' ' +  str(self.dets['easy_mask'] / self.gts['easy_num']))
+            self.logger.info('easy50' + ' ' +  str(self.dets['easy50_mask'] / self.gts['easy_num']))
+            self.logger.info('hard25' + ' ' +  str(self.dets['hard_mask'] / self.gts['hard_num']))
+            self.logger.info('hard50' + ' ' +  str(self.dets['hard50_mask'] / self.gts['hard_num']))
 
     def get_best(self):
         return self.dets['mask_sem'] / self.gts['mask_sem']
@@ -242,8 +245,9 @@ class GroundingEvaluator:
         # NOTE Two Evaluation Ways: position alignment, semantic alignment
         self.evaluate_bbox_by_pos_align(end_points, prefix)
         self.evaluate_bbox_by_sem_align(end_points, prefix)
-        self.evaluate_masks_by_pos_align(end_points, prefix)
-        self.evaluate_masks_by_sem_align(end_points, prefix)
+        if "masks" in self.losses:
+            self.evaluate_masks_by_pos_align(end_points, prefix)
+            self.evaluate_masks_by_sem_align(end_points, prefix)
     
     # BRIEF position alignment
     def evaluate_bbox_by_pos_align(self, end_points, prefix):

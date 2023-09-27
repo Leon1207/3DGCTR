@@ -303,15 +303,19 @@ class PartSegTester(object):
 @TEST.register_module()
 class GroundingTester(object):
 
+    def __init__(self, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+        super().__init__()
+        self.losses = losses
+
     def __call__(self, cfg, test_loader, model):
         logger = get_root_logger()
         logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
 
         matcher = HungarianMatcher(1, 0, 2, True)
-        losses = ['boxes', 'labels', 'contrastive_align', 'masks']
         set_criterion = SetCriterion(
                 matcher=matcher,
-                losses=losses, eos_coef=0.1, temperature=0.07)
+                losses=self.losses, eos_coef=0.1, temperature=0.07)
         criterion = compute_hungarian_loss
         prefixes = ['last_', 'proposal_']
         prefixes += [f'{i}head_' for i in range(6 - 1)]
@@ -319,7 +323,7 @@ class GroundingTester(object):
             only_root=True, thresholds=[0.25, 0.5],     # TODO only_root=True
             topks=[1, 5, 10], prefixes=prefixes,
             filter_non_gt_boxes=False,
-            logger=logger
+            logger=logger, losses=self.losses
         )
         for batch_idx, batch_data in enumerate(test_loader):
             # note forward and compute loss

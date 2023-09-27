@@ -41,6 +41,9 @@ class Structured3DReader:
         super().__init__()
         if isinstance(files, str):
             files = [files]
+        for f in files:
+            print(f)
+            zipfile.ZipFile(f, "r")
         self.readers = [zipfile.ZipFile(f, "r") for f in files]
         self.names_mapper = dict()
         for idx, reader in enumerate(self.readers):

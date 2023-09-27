@@ -480,6 +480,11 @@ class InsSegEvaluator(HookBase):
 @HOOKS.register_module()
 class GroundingEvaluator(HookBase):
 
+    def __init__(self, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+        super().__init__()
+        self.losses = losses
+
     def after_epoch(self):
         if self.trainer.cfg.evaluate:
             if (self.trainer.epoch + 1) % self.trainer.cfg.eval_freq == 0:
@@ -504,7 +509,7 @@ class GroundingEvaluator(HookBase):
             only_root=True, thresholds=[0.25, 0.5],     # TODO only_root=True
             topks=[1, 5, 10], prefixes=prefixes,
             filter_non_gt_boxes=False,
-            logger=self.trainer.logger
+            logger=self.trainer.logger, losses=self.losses
         )
         for batch_idx, batch_data in enumerate(self.trainer.val_loader):
             # note forward and compute loss

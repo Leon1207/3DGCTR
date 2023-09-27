@@ -16,9 +16,6 @@ import torch.nn as nn
 from transformers import RobertaModel, RobertaTokenizerFast
 
 from .backbone_module import Pointnet2Backbone
-from .backbone_ptv2maxpool import PMBEMBAttn
-from .backbone_swin3d import Swin3DUNet
-from .backbone_spunet import SpUNetBase
 from .modules import (
     PointsObjClsModule, GeneralSamplingModule,
     ClsAgnosticPredictHead, PositionEmbeddingLearned
@@ -26,13 +23,11 @@ from .modules import (
 from .encoder_decoder_layers import (
     BiEncoder, BiEncoderLayer, BiDecoderLayer
 )
-from torch_scatter import scatter_mean
-from .pointnet2 import pointnet2_utils
 from pointcept.models.builder import MODELS
 
 
-@MODELS.register_module("3dreftr")
-class ThreeDRefTR_SP(nn.Module):
+@MODELS.register_module("eda")
+class EDA(nn.Module):
     """
     3D language grounder.
 
@@ -68,10 +63,7 @@ class ThreeDRefTR_SP(nn.Module):
         self.butd = butd
 
         # Visual encoder
-        # self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
-        # self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)
-        # self.backbone_net = SpUNetBase(in_channels=input_feature_dim)
-        self.backbone_net = Swin3DUNet(in_channels=input_feature_dim)
+        self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
 
         if input_feature_dim == 3 and pointnet_ckpt is not None:
             self.backbone_net.load_state_dict(torch.load(
@@ -115,23 +107,6 @@ class ThreeDRefTR_SP(nn.Module):
             use_butd_enc_attn=butd
         )
         self.cross_encoder = BiEncoder(bi_layer, 3)
-
-        # Mask Feats Generation layer
-        self.x_mask = nn.Sequential(
-            nn.Conv1d(d_model, d_model * 2, 1), 
-            nn.ReLU(), 
-            nn.Conv1d(d_model * 2, d_model * 2, 1),
-            nn.ReLU(), 
-            nn.Conv1d(d_model * 2, d_model, 1)
-            )
-        self.x_query = nn.Sequential(
-            nn.Conv1d(d_model, d_model * 2, 1), 
-            nn.ReLU(), 
-            nn.Conv1d(d_model * 2, d_model * 2, 1),
-            nn.ReLU(), 
-            nn.Conv1d(d_model * 2, d_model, 1)
-            )
-        self.super_grouper = pointnet2_utils.QueryAndGroup(radius=0.2, nsample=2, use_xyz=False, normalize_xyz=True)
 
         # Query initialization
         self.points_obj_cls = PointsObjClsModule(d_model)
@@ -230,13 +205,6 @@ class ThreeDRefTR_SP(nn.Module):
         end_points['query_points_feature'] = features  # (B, F, V)
         end_points['query_points_sample_inds'] = sample_inds  # (B, V)
         return end_points
-    
-    # segmentation prediction
-    def _seg_seeds_prediction(self, query, mask_feats, end_points, prefix=''):
-        ## generate seed points masks
-        pred_mask_seeds = torch.einsum('bnd,bdm->bnm', query, mask_feats)
-        ## mapping seed points masks to superpoints masks
-        return pred_mask_seeds
 
     # BRIEF forward.
     def forward(self, data_dict):
@@ -255,12 +223,16 @@ class ThreeDRefTR_SP(nn.Module):
         Returns:
             end_points: dict
         """
+
         # STEP 1. vision and text encoding
         end_points = self._run_backbones(data_dict)
         points_xyz = end_points['fp2_xyz']
         points_features = end_points['fp2_features']
         text_feats = end_points['text_feats']
         text_padding_mask = end_points['text_attention_mask']
+
+        superpoint = data_dict['superpoint'] 
+        end_points['superpoints'] = superpoint  # avoid bugs
         
         # STEP 2. Box encoding
         if self.butd:
@@ -303,18 +275,6 @@ class ThreeDRefTR_SP(nn.Module):
             )
             end_points['proj_tokens'] = proj_tokens     # ([B, L, 64])
 
-        # STEP 4.1 Mask Feats Generation
-        mask_feats = self.x_mask(points_features).float()  # [B, 288, 1024]
-        superpoint = data_dict['superpoint']  # [B, 50000]
-        end_points['superpoints'] = superpoint
-        source_xzy = data_dict['source_xzy'].contiguous()  # [B, 50000, 3]
-        super_features = []
-        for bs in range(source_xzy.shape[0]):
-            super_xyz = scatter_mean(source_xzy[bs], superpoint[bs], dim=0).unsqueeze(0).float()  # [1, super_num, 3]
-            grouped_feature = self.super_grouper(points_xyz[bs].unsqueeze(0), super_xyz, mask_feats[bs].unsqueeze(0))  # [1, 288, super_num, nsample]
-            super_feature = F.max_pool2d(grouped_feature, kernel_size=[1, grouped_feature.size(3)]).squeeze(-1).squeeze(0)  # [288, super_num]
-            super_features.append(super_feature)
-
         # STEP 5. Query Points Generation
         end_points = self._generate_queries(
             points_xyz, points_features, end_points
@@ -339,7 +299,6 @@ class ThreeDRefTR_SP(nn.Module):
         base_xyz = proposal_center.detach().clone()
         base_size = proposal_size.detach().clone()
         query_mask = None
-        query_last = None
 
         # STEP 7. Decoder
         for i in range(self.num_decoder_layers):
@@ -382,22 +341,6 @@ class ThreeDRefTR_SP(nn.Module):
             )
             base_xyz = base_xyz.detach().clone()
             base_size = base_size.detach().clone()
-
-            query_last = query
-
-        # step Seg Prediction head
-        query_last = self.x_query(query_last.transpose(1, 2)).transpose(1, 2)
-        pred_masks = []
-        for bs in range(query.shape[0]):
-            pred_mask = self._seg_seeds_prediction(
-                query_last[bs].unsqueeze(0),                                  # ([1, F=256, V=288])
-                super_features[bs].unsqueeze(0),                             # ([1, F=288, V=super_num])
-                end_points=end_points,  # 
-                prefix=prefix
-            ).squeeze(0)  
-            pred_masks.append(pred_mask)
-
-        end_points['last_pred_masks'] = pred_masks  # [B, 256, super_num]
 
         return end_points
 

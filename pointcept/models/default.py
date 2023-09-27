@@ -68,11 +68,12 @@ class DefaultClassifier(nn.Module):
 
 @MODELS.register_module()
 class DefaultGrounder(nn.Module):
-    def __init__(self, backbone=None, criteria=None):
+    def __init__(self, 
+                 backbone=None, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
         super().__init__()
         self.backbone = build_model(backbone)
         matcher = HungarianMatcher(1, 0, 2, True)
-        losses = ['boxes', 'labels', 'contrastive_align', 'masks']
         self.set_criterion = SetCriterion(
                 matcher=matcher,
                 losses=losses, eos_coef=0.1, temperature=0.07)

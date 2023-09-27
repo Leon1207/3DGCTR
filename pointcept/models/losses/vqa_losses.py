@@ -799,7 +799,7 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
         output["pred_boxes"] = pred_bbox
         output["superpoints"] = end_points["superpoints"]
         output["language_dataset"] = end_points["language_dataset"] # dataset
-        if prefix == 'last_':
+        if prefix == 'last_' and ("last_pred_masks" in end_points):
             output["pred_masks"] = end_points["last_pred_masks"]
 
         # NOTE Compute all the requested losses, forward
