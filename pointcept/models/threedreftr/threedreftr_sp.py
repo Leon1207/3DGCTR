@@ -68,10 +68,10 @@ class ThreeDRefTR_SP(nn.Module):
         self.butd = butd
 
         # Visual encoder
-        # self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
+        self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
         # self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)
         # self.backbone_net = SpUNetBase(in_channels=input_feature_dim)
-        self.backbone_net = Swin3DUNet(in_channels=input_feature_dim)
+        # self.backbone_net = Swin3DUNet(in_channels=input_feature_dim)
 
         if input_feature_dim == 3 and pointnet_ckpt is not None:
             self.backbone_net.load_state_dict(torch.load(

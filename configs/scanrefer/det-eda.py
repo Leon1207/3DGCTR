@@ -1,12 +1,13 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 12 # bs: total bs in all gpus
+batch_size = 80 # bs: total bs in all gpus
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
-num_worker = 4
-# batch_size_val = 16
-# batch_size_test = 16
+num_worker = 8
+batch_size_val = 20
+batch_size_test = 20
+eval_freq = 1
 
 # model settings
 model = dict(
@@ -14,6 +15,7 @@ model = dict(
     backbone=dict(
         type="eda"
     ),
+    losses=['boxes', 'labels', 'contrastive_align']
 )
 
 # scheduler settings
@@ -137,5 +139,6 @@ hooks = [
 # tester
 test = dict(
     type="GroundingTester",
+    losses=['boxes', 'labels', 'contrastive_align']
 )
 

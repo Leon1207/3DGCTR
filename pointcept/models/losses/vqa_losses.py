@@ -809,8 +809,9 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
         loss_ce += losses.get('loss_ce', 0)
         loss_bbox += losses['loss_bbox']
         loss_giou += losses.get('loss_giou', 0)
-        loss_mask += losses.get('loss_mask')
-        loss_dice += losses.get('loss_dice')
+        if "last_pred_masks" in end_points:
+            loss_mask += losses.get('loss_mask')
+            loss_dice += losses.get('loss_dice')
         if 'proj_tokens' in end_points:
             loss_sem_align += losses['loss_sem_align']
 

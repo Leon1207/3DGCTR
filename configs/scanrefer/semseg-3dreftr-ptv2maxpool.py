@@ -6,7 +6,7 @@ empty_cache = False
 enable_amp = True
 num_worker = 8
 batch_size_val = 8
-batch_size_test = 8
+batch_size_test = 1
 find_unused_parameters = True
 eval_freq = 3
 

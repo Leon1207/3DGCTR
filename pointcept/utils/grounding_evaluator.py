@@ -107,7 +107,7 @@ class GroundingEvaluator:
         self.reset()
         self.logger = logger
         self.losses = losses
-        self.visualization_pred = False
+        self.visualization_pred = True
         self.visualization_gt = False
         self.bad_case_visualization = False
         self.kps_points_visualization = False

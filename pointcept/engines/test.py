@@ -310,7 +310,8 @@ class GroundingTester(object):
 
     def __call__(self, cfg, test_loader, model):
         logger = get_root_logger()
-        logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
+        model = model.eval()  # necessary!!
+        logger.info('>>>>>>>>>>>>>>>> Start Testing >>>>>>>>>>>>>>>>')
 
         matcher = HungarianMatcher(1, 0, 2, True)
         set_criterion = SetCriterion(
@@ -327,9 +328,8 @@ class GroundingTester(object):
         )
         for batch_idx, batch_data in enumerate(test_loader):
             # note forward and compute loss
-            
-            batch_data = self._to_gpu(batch_data)
-            inputs = self._get_inputs(batch_data)
+            inputs = self._to_gpu(batch_data)
+
             if "train" not in inputs:
                 inputs.update({"train": False})
             else:
@@ -369,12 +369,9 @@ class GroundingTester(object):
 
                     # evaluation
                     evaluator.evaluate(end_points, prefix)  
-
-            self.trainer.comm_info["current_metric_value"] = 0.0  # save for saver
-            self.trainer.comm_info["current_metric_name"] = "None"  # save for saver
         
         evaluator.print_stats()
-        logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
+        logger.info('<<<<<<<<<<<<<<<<< End Testing <<<<<<<<<<<<<<<<<')
 
     def _accumulate_stats(self, stat_dict, end_points):
         for key in end_points:
@@ -393,3 +390,7 @@ class GroundingTester(object):
                 if isinstance(data_dict[key], torch.Tensor):
                     data_dict[key] = data_dict[key].cuda(non_blocking=True)
         return data_dict
+
+    @staticmethod
+    def collate_fn(batch):
+        return collate_fn(batch)

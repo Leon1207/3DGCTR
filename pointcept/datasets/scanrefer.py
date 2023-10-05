@@ -60,7 +60,7 @@ class Joint3DDataset(Dataset):
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
                  butd=True, butd_gt=False, butd_cls=False, augment_det=True,
-                 wo_obj_name="None", test_mode=False, loop=1):
+                 wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
         self.test_dataset = test_dataset
@@ -71,6 +71,7 @@ class Joint3DDataset(Dataset):
         self.detect_intermediate = detect_intermediate
         self.augment = self.split == 'train'
         self.test_mode = test_mode
+        self.test_cfg = test_cfg
         self.transform = Compose(transform)
         self.use_multiview = use_multiview
         self.data_path = data_root
@@ -286,7 +287,8 @@ class Joint3DDataset(Dataset):
 
         ###########################
         # STEP 2. text decoupling #
-        ###########################
+        ########################
+        # ###
         Scene_graph_parse(annos)
 
         # # NOTE BUTD-DETR unreasonable approach, add GT object name

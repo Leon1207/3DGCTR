@@ -498,10 +498,9 @@ class GroundingEvaluator(HookBase):
         self.trainer.model.eval()
 
         matcher = HungarianMatcher(1, 0, 2, True)
-        losses = ['boxes', 'labels', 'contrastive_align', 'masks']
         set_criterion = SetCriterion(
                 matcher=matcher,
-                losses=losses, eos_coef=0.1, temperature=0.07)
+                losses=self.losses, eos_coef=0.1, temperature=0.07)
         criterion = compute_hungarian_loss
         prefixes = ['last_', 'proposal_']
         prefixes += [f'{i}head_' for i in range(5)]
