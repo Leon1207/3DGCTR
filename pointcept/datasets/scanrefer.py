@@ -389,7 +389,7 @@ class Joint3DDataset(Dataset):
         """Sample classes for the scannet detection sentences."""
         scan = self.scans[scan_id]
         sampled_classes = set([
-            self.label_map[scan.get_object_instance_label(ind)]
+            self.label_map[scan.get_object_instance_label(ind)]  # chair, bed, ...
             for ind in range(len(scan.three_d_objects))
         ])
         sampled_classes = list(sampled_classes & set(DC.nyu40id2class))
@@ -896,7 +896,7 @@ class Joint3DDataset(Dataset):
                         scan.get_object_instance_label(ind)
                     ] in DC18.nyu40id2class
                     for ind in range(len(scan.three_d_objects))
-                ])[:MAX_NUM_OBJ])[0].tolist()
+                ])[:MAX_NUM_OBJ])[0].tolist()  # target_id是相对于整个scene拥有的object的index
             else:
                 anno['target_id'] = np.where(np.array([
                     self.label_map[
