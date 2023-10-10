@@ -32,7 +32,7 @@ import copy
 
 from .preprocessing.scanrefer.model_util_scannet import ScannetDatasetConfig
 from .preprocessing.scanrefer.scannet_utils import read_label_mapping
-from .preprocessing.scanrefer.visual_data_handlers import Scan
+from .preprocessing.scanrefer.visual_data_handlers import Scan, S3D
 from .preprocessing.scanrefer.scannet_classes import REL_ALIASES, VIEW_DEP_RELS
 
 # NOTE sng_parser
@@ -47,14 +47,14 @@ MAX_NUM_OBJ = 132
 
 
 @DATASETS.register_module()
-class Joint3DDataset(Dataset):
+class Joint3DDataset_DC(Dataset):
     """Dataset utilities for ReferIt3D."""
 
     def __init__(self, 
                  split='train',
                  data_root='./',
                  transform=None,
-                 dataset_dict={'scanrefer': 1, 'scannet': 10},
+                 dataset_dict={'scanrefer': 1, 'scannet': 10, 'structured3d': 1},
                  test_dataset='scanrefer',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
@@ -75,7 +75,6 @@ class Joint3DDataset(Dataset):
         self.transform = Compose(transform)
         self.use_multiview = use_multiview
         self.data_path = data_root
-        self.visualization_superpoint = False  # manually set this to True to debug
         self.butd = butd
         self.butd_gt = butd_gt
         self.butd_cls = butd_cls
@@ -134,13 +133,20 @@ class Joint3DDataset(Dataset):
         # self.scans = unpickle_data(f'{self.data_path}/{split}_v3scans_full.pkl')  # full points
         self.scans = list(self.scans)[0]
 
-        # fetch superpoints
-        self.superpoints = {}
-        for scan in self.scans:
-            superpoint = torch.load(os.path.join('/userhome/lyd/RES/superpoint', self.split, scan + "_superpoint.pth"))
-            self.superpoints[scan] = superpoint
+        # step 4. load datasets for structured3D
+        self.s3ds = {}
+        s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val'  # debug, replace val with {split}
+        if not os.path.exists(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_s3ds.pkl'):
+            for dirpath, _, filenames in os.walk(s3d_data_path):
+                for filename in filenames:
+                    scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
+                    self.s3ds[scene_id] = S3D(scene_id, s3d_data_path)
+            pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_s3ds.pkl', self.s3ds)
+        else:
+            self.s3ds = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_s3ds.pkl')
+            self.s3ds = list(self.s3ds)[0]
         
-        # step 4. load text dataset
+        # step 5. load text dataset
         if self.split != 'train':
             self.annos = self.load_annos(test_dataset)
         else:
@@ -158,7 +164,8 @@ class Joint3DDataset(Dataset):
             'sr3d': self.load_sr3d_annos,
             'sr3d+': self.load_sr3dplus_annos,
             'scanrefer': self.load_scanrefer_annos, # scanrefer
-            'scannet': self.load_scannet_annos      # scannet detection augmentation
+            'scannet': self.load_scannet_annos,      # scannet detection augmentation
+            'structured3d': self.load_structured3d_annos,  # s3d
         }
         annos = loaders[dset]()
         if self.overfit:
@@ -281,7 +288,7 @@ class Joint3DDataset(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader[:100]
+            for anno in reader
             if anno['scene_id'] in scan_ids
         ]
 
@@ -383,11 +390,71 @@ class Joint3DDataset(Dataset):
                 if a not in {965, 977}
             ]
         return annos
+
+    
+    def load_structured3d_annos(self):
+        """Load annotations of structured3d."""
+        split = 'train' if self.split == 'train' else 'val'
+        scene_ids = []
+
+        for scene_id in self.s3ds:
+            scene_ids.append(scene_id)   
+
+        annos = []
+        for scan_id in scene_ids:
+            if scene_id not in list(self.s3ds.keys()):
+                continue
+
+            scan = self.s3ds[scan_id]
+            # Ignore scans that have no object in our vocabulary
+            keep = np.array([
+                self.label_map[
+                    scan.get_object_instance_label(ind)
+                ] in DC.nyu40id2class
+                for ind in range(len(scan.three_d_objects))
+            ])
+            if keep.any():
+                # this will get populated randomly each time
+                annos.append({
+                    'scan_id': scan_id,
+                    'target_id': [],
+                    'distractor_ids': [],
+                    'utterance': '',
+                    'target': [],
+                    'anchors': [],
+                    'anchor_ids': [],
+                    'dataset': 'structured3d'
+                })
+
+        return annos
     
     # BRIEF smaple classes for detection prompt
     def _sample_classes(self, scan_id):
         """Sample classes for the scannet detection sentences."""
         scan = self.scans[scan_id]
+        sampled_classes = set([
+            self.label_map[scan.get_object_instance_label(ind)]  # chair, bed, ...
+            for ind in range(len(scan.three_d_objects))
+        ])
+        sampled_classes = list(sampled_classes & set(DC.nyu40id2class))
+        # sample 10 classes
+        if self.split == 'train' and self.random_utt:  # random utterance
+            if len(sampled_classes) > 10:
+                sampled_classes = random.sample(sampled_classes, 10)
+            ret = [DC.class2type[DC.nyu40id2class[i]] for i in sampled_classes]
+            random.shuffle(ret)
+        else:
+            ret = [
+                'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+                'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
+                'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
+                'other furniture'
+            ]
+        return ret
+
+    def _sample_classes_s3d(self, scan_id):
+        """Sample classes for the scannet detection sentences."""
+        scan = self.s3ds[scan_id]
         sampled_classes = set([
             self.label_map[scan.get_object_instance_label(ind)]  # chair, bed, ...
             for ind in range(len(scan.three_d_objects))
@@ -879,15 +946,21 @@ class Joint3DDataset(Dataset):
 
         # step Read annotation and point clouds
         anno = self.annos[index]
-        scan = self.scans[anno['scan_id']]
+        if anno['dataset'] == 'structured3d':
+            scan = self.s3ds[anno['scan_id']]
+        else:
+            scan = self.scans[anno['scan_id']]
         scan.pc = np.copy(scan.orig_pc)
-        superpoint = self.superpoints[anno['scan_id']]
+        superpoint = torch.zeros((10))  # avoid bugs
 
         # step constract anno (used only for [scannet])
         self.random_utt = False
-        if anno['dataset'] == 'scannet':
+        if (anno['dataset'] == 'scannet') or (anno['dataset'] == 'structured3d'):
             self.random_utt = self.joint_det and np.random.random() > 0.5
-            sampled_classes = self._sample_classes(anno['scan_id'])
+            if anno['dataset'] == 'scannet':
+                sampled_classes = self._sample_classes(anno['scan_id'])
+            else:
+                sampled_classes = self._sample_classes_s3d(anno['scan_id'])
             utterance = self._create_scannet_utterance(sampled_classes)
             
             if not self.random_utt:  # detection18 phrase
@@ -929,7 +1002,7 @@ class Joint3DDataset(Dataset):
                     for ind in anno['target_id']
                 ]
             anno['utterance'] = utterance
-
+   
         # step Point cloud representation
         point_cloud, augmentations, og_color = self._get_pc(anno, scan)
         offset = torch.tensor([point_cloud.shape[0]])
@@ -944,12 +1017,16 @@ class Joint3DDataset(Dataset):
         ) = self._get_scene_objects(scan)
 
         # not used
-        auxi_box = self._get_auxi_boxes(anno, class_ids, all_bboxes, all_bbox_label_mask, gt_bboxes)
+        # auxi_box = self._get_auxi_boxes(anno, class_ids, all_bboxes, all_bbox_label_mask, gt_bboxes)
+        auxi_box = None
 
         ##########################
         # STEP Get text position #
         ##########################
         if anno['dataset'] == 'scannet':
+            tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
+                other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map(anno)
+        elif anno['dataset'] == 'structured3d':  # debug
             tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
                 other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map(anno)
         else:
@@ -962,24 +1039,30 @@ class Joint3DDataset(Dataset):
             auxi_box = np.expand_dims(auxi_box, axis=0)
         
         # step groupfree Detected boxes
-        (
-            all_detected_bboxes, all_detected_bbox_label_mask,
-            detected_class_ids, detected_logits
-        ) = self._get_detected_objects(split, anno['scan_id'], augmentations)
-
-        # Assume a perfect object detector
-        if self.butd_gt:
+        if anno['dataset'] == 'structured3d':
             all_detected_bboxes = all_bboxes
             all_detected_bbox_label_mask = all_bbox_label_mask
             detected_class_ids = class_ids
+            detected_logits = np.zeros((MAX_NUM_OBJ, NUM_CLASSES))  # not used
+        else:
+            (
+                all_detected_bboxes, all_detected_bbox_label_mask,
+                detected_class_ids, detected_logits
+            ) = self._get_detected_objects(split, anno['scan_id'], augmentations)
 
-        # Assume a perfect object proposal stage
-        if self.butd_cls:
-            all_detected_bboxes = all_bboxes
-            all_detected_bbox_label_mask = all_bbox_label_mask
-            detected_class_ids = np.zeros((len(all_bboxes,)))
-            classes = np.array(self.cls_results[anno['scan_id']])
-            detected_class_ids[all_bbox_label_mask] = classes[classes > -1]
+            # Assume a perfect object detector
+            if self.butd_gt:
+                all_detected_bboxes = all_bboxes
+                all_detected_bbox_label_mask = all_bbox_label_mask
+                detected_class_ids = class_ids
+
+            # Assume a perfect object proposal stage
+            if self.butd_cls:
+                all_detected_bboxes = all_bboxes
+                all_detected_bbox_label_mask = all_bbox_label_mask
+                detected_class_ids = np.zeros((len(all_bboxes,)))
+                classes = np.array(self.cls_results[anno['scan_id']])
+                detected_class_ids[all_bbox_label_mask] = classes[classes > -1]
 
         # Return
         _labels = np.zeros(MAX_NUM_OBJ)
@@ -1052,8 +1135,8 @@ class Joint3DDataset(Dataset):
                 if isinstance(anno['target_id'], int)
                 else class_ids[anno['target_id'][0]]
             ),
-            "superpoint": superpoint,
             "offset": offset,
+            "superpoint": superpoint,  # avoid bugs
             "source_xzy": point_cloud[..., 0:3].astype(np.float32)
         })
 

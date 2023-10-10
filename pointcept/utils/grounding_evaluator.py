@@ -107,7 +107,7 @@ class GroundingEvaluator:
         self.reset()
         self.logger = logger
         self.losses = losses
-        self.visualization_pred = True
+        self.visualization_pred = False
         self.visualization_gt = False
         self.bad_case_visualization = False
         self.kps_points_visualization = False
@@ -245,9 +245,9 @@ class GroundingEvaluator:
         # NOTE Two Evaluation Ways: position alignment, semantic alignment
         self.evaluate_bbox_by_pos_align(end_points, prefix)
         self.evaluate_bbox_by_sem_align(end_points, prefix)
-        if "masks" in self.losses:
-            self.evaluate_masks_by_pos_align(end_points, prefix)
-            self.evaluate_masks_by_sem_align(end_points, prefix)
+        # if "masks" in self.losses:
+        #     self.evaluate_masks_by_pos_align(end_points, prefix)
+        #     self.evaluate_masks_by_sem_align(end_points, prefix)
     
     # BRIEF position alignment
     def evaluate_bbox_by_pos_align(self, end_points, prefix):

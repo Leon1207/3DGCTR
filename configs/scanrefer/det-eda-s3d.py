@@ -1,31 +1,31 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 32 # bs: total bs in all gpus
+batch_size = 20 # bs: total bs in all gpus
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
 num_worker = 8
 batch_size_val = 1
 batch_size_test = 1
-find_unused_parameters = True
 eval_freq = 3
 
 # model settings
 model = dict(
     type="DefaultGrounder",
     backbone=dict(
-        type="3dreftr"
+        type="eda"
     ),
+    losses=['boxes', 'labels', 'contrastive_align']
 )
 
 # scheduler settings
 epoch = 100
 eval_epoch = 100
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+optimizer = dict(type="AdamW", lr=5e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
-dataset_type = "Joint3DDataset"
+dataset_type = "Joint3DDataset_DC"
 data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
@@ -131,13 +131,14 @@ hooks = [
     dict(type="CheckpointLoader"),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
-    dict(type="GroundingEvaluator"),
+    dict(type="GroundingEvaluator", losses=['boxes', 'labels', 'contrastive_align']),
     dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False)
 ]
 
 # tester
 test = dict(
-    type="GroundingTester"
+    type="GroundingTester",
+    losses=['boxes', 'labels', 'contrastive_align']
 )
 

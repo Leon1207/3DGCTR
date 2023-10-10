@@ -55,7 +55,7 @@ class Joint3DDataset(Dataset):
                  data_root='./',
                  transform=None,
                  dataset_dict={'scanrefer': 1, 'scannet': 10},
-                 test_dataset='scanrefer',
+                 test_dataset='scanrefer',  # det or rec
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
@@ -281,7 +281,7 @@ class Joint3DDataset(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader[:100]
+            for anno in reader
             if anno['scene_id'] in scan_ids
         ]
 

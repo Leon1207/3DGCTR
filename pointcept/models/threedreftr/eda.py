@@ -163,7 +163,7 @@ class EDA(nn.Module):
     def _run_backbones(self, data_dict):
         """Run visual and text backbones."""
         # step 1. Visual encoder
-        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['superpoint'].shape[0])
+        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['source_xzy'].shape[0])
         end_points['seed_inds'] = end_points['fp2_inds']
         end_points['seed_xyz'] = end_points['fp2_xyz']
         end_points['seed_features'] = end_points['fp2_features']

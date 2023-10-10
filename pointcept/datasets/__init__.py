@@ -3,6 +3,7 @@ from .defaults import DefaultDataset, ConcatDataset
 from .s3dis import S3DISDataset
 from .scannet import ScanNetDataset, ScanNet200Dataset
 from .scanrefer import Joint3DDataset
+from .scanrefer_dc import Joint3DDataset_DC
 from .scannet_pair import ScanNetPairDataset
 from .arkitscenes import ArkitScenesDataset
 from .structure3d import Structured3DDataset
