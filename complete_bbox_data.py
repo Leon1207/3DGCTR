@@ -200,15 +200,15 @@ if __name__ == "__main__":
 
     print(scene_indexes_to_convert)
 
-    nb_processors = 4
+    nb_processors = 1
     length = len(scene_indexes_to_convert)
     scene_indexes_splits = [
         scene_indexes_to_convert[i * length // nb_processors: (i + 1) * length // nb_processors]
         for i in range(nb_processors)
     ]
 
-    for count, s in enumerate(scene_indexes_splits):
-        p = Process(target=complete_bbox_json_for_indexes, args=(PATH_TO_DATASET, s, count))
-        p.start()
+    # for count, s in enumerate(scene_indexes_splits):
+    #     p = Process(target=complete_bbox_json_for_indexes, args=(PATH_TO_DATASET, s, count))
+    #     p.start()
 
-    # complete_bbox_json(PATH_TO_DATASET, '00000')
+    complete_bbox_json(PATH_TO_DATASET, '00000')

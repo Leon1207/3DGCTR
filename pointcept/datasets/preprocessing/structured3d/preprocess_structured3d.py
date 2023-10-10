@@ -90,6 +90,9 @@ class Structured3DReader:
         segment = np.array(PIL.Image.open(io.BytesIO(self.read(segment_path))))[..., np.newaxis]
         return segment
 
+    def read_instance(self, instance_path):
+        instance = np.array(PIL.Image.open(io.BytesIO(self.read(instance_path))))[..., np.newaxis]
+        return instance
 
 def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=None,
                 fuse_prsp=True, fuse_pano=True, vis=False):
@@ -114,6 +117,7 @@ def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=Non
         color_list = list()
         normal_list = list()
         segment_list = list()
+        instance_list = list()
         if fuse_prsp:
             prsp_path = os.path.join(room_path, "perspective", "full")
             frames = reader.listdir(prsp_path)
@@ -124,6 +128,7 @@ def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=Non
                     depth = reader.read_depth(os.path.join(prsp_path, frame, "depth.png"))
                     color = reader.read_color(os.path.join(prsp_path, frame, "rgb_rawlight.png"))
                     segment = reader.read_segment(os.path.join(prsp_path, frame, "semantic.png"))
+                    instance = reader.read_instance(os.path.join(prsp_path, frame, "instance.png"))
                 except:
                     print(f"Skipping {scene}_room{room}_frame{frame} perspective view due to loading error")
                 else:
@@ -157,6 +162,7 @@ def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=Non
                         color_list.append(color.reshape(-1, 3)[mask])
                         normal_list.append(normal.reshape(-1, 3)[mask])
                         segment_list.append(segment.reshape(-1, 1)[mask])
+                        instance_list.append(instance.reshape(-1, 1)[mask])
                     else:
                         print(f"Skipping {scene}_room{room}_frame{frame} perspective view due to all points are filtered out")
 
@@ -168,6 +174,8 @@ def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=Non
                 depth = reader.read_depth(os.path.join(pano_path, "full", "depth.png"))
                 color = reader.read_color(os.path.join(pano_path, "full", "rgb_rawlight.png"))
                 segment = reader.read_segment(os.path.join(pano_path, "full", "semantic.png"))
+                instance = reader.read_instance(os.path.join(pano_path, "full", "instance.png"))
+                assert len(segment) == len(instance)  # avoid some disalignments
             except:
                 print(f"Skipping {scene}_room{room} panorama view due to loading error")
             else:
@@ -187,7 +195,8 @@ def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=Non
                 view_dist = np.maximum(np.linalg.norm(coord, axis=-1, keepdims=True), float(10e-5))
                 cosine_dist = np.sum((coord * normal / view_dist), axis=-1, keepdims=True)
                 cosine_dist = np.abs(cosine_dist)
-                mask = ((cosine_dist > 0.15) & (depth < 65535) & (segment > 0))[..., 0].reshape(-1)
+                # adding filter of instance, 65535 represents background
+                mask = ((cosine_dist > 0.15) & (depth < 65535) & (segment > 0) & (instance < 65535))[..., 0].reshape(-1)
                 coord = coord + cam_t
 
                 if sum(mask) > 0:
@@ -195,6 +204,7 @@ def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=Non
                     color_list.append(color.reshape(-1, 3)[mask])
                     normal_list.append(normal.reshape(-1, 3)[mask])
                     segment_list.append(segment.reshape(-1, 1)[mask])
+                    instance_list.append(instance.reshape(-1, 1)[mask])
                 else:
                     print(f"Skipping {scene}_room{room} panorama view due to all points are filtered out")
 
@@ -205,20 +215,51 @@ def parse_scene(scene, dataset_root, output_root, ignore_index=-1, grid_size=Non
             normal = np.concatenate(normal_list, axis=0)
             normal = normal @ np.array([[1, 0, 0], [0, 0, 1], [0, 1, 0]])
             segment = np.concatenate(segment_list, axis=0)
+            instance = np.concatenate(instance_list, axis=0)
             segment25 = np.ones_like(segment, dtype=np.int64) * ignore_index
             for idx, value in enumerate(VALID_CLASS_IDS_25):
                 mask = np.all(segment == value, axis=-1)
                 segment25[mask] = idx
 
             data_dict = dict(coord=coord.astype("float32"), color=color.astype("uint8"),
-                             normal=normal.astype("float32"), semantic_gt=segment25.astype("int16"))
+                             normal=normal.astype("float32"), semantic_gt=segment25.astype("int16"), 
+                             instance_gt=instance.astype("int16"))
             # Grid sampling data
             if grid_size is not None:
                 sampler = GridSample(grid_size=grid_size,
-                                     keys=("coord", "color", "normal", "semantic_gt"))
+                                     keys=("coord", "color", "normal", "semantic_gt", "instance_gt"))
                 data_dict = sampler(data_dict)
             torch.save(data_dict, os.path.join(scene_output_path, f"room_{room}.pth"))
 
+            # debug for scan loading
+            # segments = data_dict["semantic_gt"].reshape([-1])
+            # instances = data_dict["instance_gt"].reshape([-1])
+            # choices = np.random.choice(
+            #     segments.shape[0],
+            #     50000,
+            #     replace=len(segments) < 50000
+            # )
+            # segments = segments[choices]
+            # instances = instances[choices]
+            # three_d_objects = []
+            # class_label25 = ("wall", "floor", "cabinet", "bed", "chair", "sofa", "table", "door", "window", "picture", "desk",
+            #        "shelves", "curtain", "dresser", "pillow", "mirror", "ceiling", "refrigerator", "television",
+            #        "nightstand", "sink", "lamp", "otherstructure", "otherfurniture", "otherprop")
+            # object_ids = set(instances)
+            # for cnt, ids in enumerate(object_ids):
+            #     if int(ids) != -1:
+            #         points = np.where(instances == int(ids))
+            #         seg_label = segments[points]
+            #         print(room_path, len(set(seg_label)))
+            #         length = len(set(seg_label))
+            #         assert len(set(seg_label)) == 1  # why appears 2? ignored, and select the majority vote object.
+            #         three_d_objects.append(dict({
+            #             'object_id': cnt,
+            #             'points': np.array(points),
+            #             'instance_label': class_label25[max(list(seg_label), key=list(seg_label).count)]
+            #         }))
+
+            # visualization
             if vis:
                 from pointcept.utils.visualization import save_point_cloud
                 os.makedirs("./vis", exist_ok=True)
