@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch_scatter import scatter_mean
+import numpy as np
 
 
 def is_dist_avail_and_initialized():
@@ -334,9 +335,6 @@ class HungarianMatcher(nn.Module):
             box_cxcyczwhd_to_xyzxyz(tgt_bbox)
         )
 
-        # print("out_bbox: ", out_bbox)
-        # print("tgt_bbox: ", tgt_bbox)
-
         # Final cost matrix
         C = (
             self.cost_bbox * cost_bbox          # 0 * 
@@ -346,7 +344,7 @@ class HungarianMatcher(nn.Module):
         ).view(bs, num_queries, -1).cpu()
 
         sizes = [len(v["boxes"]) for v in targets]
-        indices = [
+        indices = [ 
             linear_sum_assignment(c[i])
             for i, c in enumerate(C.split(sizes, -1))
         ]

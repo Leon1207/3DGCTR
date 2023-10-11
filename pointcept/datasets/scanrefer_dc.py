@@ -54,7 +54,8 @@ class Joint3DDataset_DC(Dataset):
                  split='train',
                  data_root='./',
                  transform=None,
-                 dataset_dict={'scanrefer': 1, 'scannet': 10, 'structured3d': 1},
+                #  dataset_dict={'scanrefer': 1, 'scannet': 10, 'structured3d': 1},
+                 dataset_dict={'structured3d': 1},
                  test_dataset='scanrefer',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
@@ -951,7 +952,7 @@ class Joint3DDataset_DC(Dataset):
         else:
             scan = self.scans[anno['scan_id']]
         scan.pc = np.copy(scan.orig_pc)
-        superpoint = torch.zeros((10))  # avoid bugs
+        superpoint = torch.zeros((1))  # avoid bugs
 
         # step constract anno (used only for [scannet])
         self.random_utt = False
@@ -1023,10 +1024,7 @@ class Joint3DDataset_DC(Dataset):
         ##########################
         # STEP Get text position #
         ##########################
-        if anno['dataset'] == 'scannet':
-            tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
-                other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map(anno)
-        elif anno['dataset'] == 'structured3d':  # debug
+        if (anno['dataset'] == 'scannet') or (anno['dataset'] == 'structured3d'):
             tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
                 other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map(anno)
         else:
