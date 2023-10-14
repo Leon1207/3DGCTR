@@ -26,7 +26,7 @@ from .encoder_decoder_layers import (
 from pointcept.models.builder import MODELS
 
 
-@MODELS.register_module("eda")
+@MODELS.register_module("eda_dets3d")
 class EDA(nn.Module):
     """
     3D language grounder.
@@ -60,7 +60,6 @@ class EDA(nn.Module):
         self.num_decoder_layers = num_decoder_layers
         self.self_position_embedding = self_position_embedding
         self.contrastive_align_loss = contrastive_align_loss
-        self.butd = butd
 
         # Visual encoder
         self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
@@ -87,24 +86,13 @@ class EDA(nn.Module):
             nn.Dropout(0.1)
         )
 
-        # Box encoder
-        if self.butd:
-            self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
-            saved_embeddings = torch.from_numpy(np.load(
-                '/userhome/lyd/3dvlm/data/class_embeddings3d.npy', allow_pickle=True
-            ))
-            self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
-            self.butd_class_embeddings.requires_grad = False
-            self.class_embeddings = nn.Linear(768, d_model - 128)
-            self.box_embeddings = PositionEmbeddingLearned(6, 128)
-
         # Cross-encoder
         self.pos_embed = PositionEmbeddingLearned(3, d_model)
         bi_layer = BiEncoderLayer(
             d_model, dropout=0.1, activation="relu",
             n_heads=8, dim_feedforward=256,
             self_attend_lang=self_attend, self_attend_vis=self_attend,
-            use_butd_enc_attn=butd
+            use_butd_enc_attn=False
         )
         self.cross_encoder = BiEncoder(bi_layer, 3)
 
@@ -126,7 +114,7 @@ class EDA(nn.Module):
             self.decoder.append(BiDecoderLayer(
                 d_model, n_heads=8, dim_feedforward=256,
                 dropout=0.1, activation="relu",
-                self_position_embedding=self_position_embedding, butd=self.butd
+                self_position_embedding=self_position_embedding, butd=False
             ))
 
         # Prediction heads
@@ -234,21 +222,8 @@ class EDA(nn.Module):
         superpoint = data_dict['superpoint'] 
         end_points['superpoints'] = superpoint  # avoid bugs
         
-        # STEP 2. Box encoding
-        if self.butd:
-            # attend on those features
-            detected_mask = ~data_dict['det_bbox_label_mask']
-
-            # step box position.    det_boxes ([B, 132, 6]) -->  ([B, 128, 132])
-            box_embeddings = self.box_embeddings(data_dict['det_boxes'])
-            # step box class        det_class_ids ([B, 132])  -->  ([B, 132, 160])
-            class_embeddings = self.class_embeddings(self.butd_class_embeddings(data_dict['det_class_ids']))
-            # step box feature     ([B, 132, 288])
-            detected_feats = torch.cat([box_embeddings, class_embeddings.transpose(1, 2)]
-                                        , 1).transpose(1, 2).contiguous()
-        else:
-            detected_mask = None
-            detected_feats = None
+        detected_mask = None
+        detected_feats = None
 
         # STEP 3. Cross-modality encoding
         points_features, text_feats = self.cross_encoder(
@@ -320,11 +295,8 @@ class EDA(nn.Module):
                 text_feats, query_pos,
                 query_mask,
                 text_padding_mask,
-                detected_feats=(
-                    detected_feats if self.butd
-                    else None
-                ),
-                detected_mask=detected_mask if self.butd else None
+                detected_feats=None,
+                detected_mask=None
             )  # (B, V, F)
             # step project
             if self.contrastive_align_loss:

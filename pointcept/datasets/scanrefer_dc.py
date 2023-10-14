@@ -34,6 +34,7 @@ from .preprocessing.scanrefer.model_util_scannet import ScannetDatasetConfig
 from .preprocessing.scanrefer.scannet_utils import read_label_mapping
 from .preprocessing.scanrefer.visual_data_handlers import Scan, S3D
 from .preprocessing.scanrefer.scannet_classes import REL_ALIASES, VIEW_DEP_RELS
+import wandb
 
 # NOTE sng_parser
 import sys, os
@@ -54,13 +55,14 @@ class Joint3DDataset_DC(Dataset):
                  split='train',
                  data_root='./',
                  transform=None,
-                #  dataset_dict={'scanrefer': 1, 'scannet': 10, 'structured3d': 1},
-                 dataset_dict={'structured3d': 1},
+                 dataset_dict={'scanrefer': 1, 'scannet': 10, 'structured3d': 1},
+                #  dataset_dict={'scanrefer': 1, 'scannet': 10},
+                #  dataset_dict={'structured3d': 1},  # debug
                  test_dataset='scanrefer',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
-                 butd=True, butd_gt=False, butd_cls=False, augment_det=True,
+                 butd=False, butd_gt=False, butd_cls=False, augment_det=True,
                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
@@ -81,7 +83,7 @@ class Joint3DDataset_DC(Dataset):
         self.butd_cls = butd_cls
         self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
-            'scannet' in dataset_dict
+            ('scannet' in dataset_dict) or ('structured3d' in dataset_dict)
             and len(dataset_dict.keys()) > 1
             and self.split == 'train'
         )
@@ -137,14 +139,15 @@ class Joint3DDataset_DC(Dataset):
         # step 4. load datasets for structured3D
         self.s3ds = {}
         s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val'  # debug, replace val with {split}
-        if not os.path.exists(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_s3ds.pkl'):
+        pkl_name = 'val_s3ds_filter.pkl'  # debug, replace val with {split}
+        if not os.path.exists(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name):
             for dirpath, _, filenames in os.walk(s3d_data_path):
                 for filename in filenames:
                     scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
                     self.s3ds[scene_id] = S3D(scene_id, s3d_data_path)
-            pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_s3ds.pkl', self.s3ds)
+            pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name, self.s3ds)
         else:
-            self.s3ds = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_s3ds.pkl')
+            self.s3ds = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name)
             self.s3ds = list(self.s3ds)[0]
         
         # step 5. load text dataset
@@ -289,7 +292,7 @@ class Joint3DDataset_DC(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader
+            for anno in reader[:100]
             if anno['scene_id'] in scan_ids
         ]
 
@@ -583,7 +586,7 @@ class Joint3DDataset_DC(Dataset):
                 anno['dataset'].startswith('sr3d')
                 and rel_name not in VIEW_DEP_RELS
             )
-            rotate_else = anno['dataset'] == 'scannet'
+            rotate_else = (anno['dataset'] == 'scannet') or (anno['dataset'] == 'structured3d')
             rotate = rotate_sr3d or rotate_natural or rotate_else
             pc, color, augmentations = self._augment(scan.pc, color, rotate)
             scan.pc = pc
@@ -790,7 +793,7 @@ class Joint3DDataset_DC(Dataset):
             (bboxes[:, :3] + bboxes[:, 3:]) * 0.5,
             bboxes[:, 3:] - bboxes[:, :3]
         ), 1)
-        if self.split == 'train' and self.augment:  # jitter boxes
+        if self.split == 'train' and self.augment and anno['dataset'] != 'structured3d':  # jitter boxes
             bboxes[:len(tids)] *= (0.95 + 0.1*np.random.random((len(tids), 6)))
         bboxes[len(tids):, :3] = 1000
         
@@ -1037,12 +1040,13 @@ class Joint3DDataset_DC(Dataset):
             auxi_box = np.expand_dims(auxi_box, axis=0)
         
         # step groupfree Detected boxes
-        if anno['dataset'] == 'structured3d':
-            all_detected_bboxes = all_bboxes
-            all_detected_bbox_label_mask = all_bbox_label_mask
-            detected_class_ids = class_ids
-            detected_logits = np.zeros((MAX_NUM_OBJ, NUM_CLASSES))  # not used
-        else:
+
+        all_detected_bboxes = np.zeros((MAX_NUM_OBJ, 6))
+        all_detected_bbox_label_mask = np.array([False] * MAX_NUM_OBJ)
+        detected_class_ids = np.zeros((MAX_NUM_OBJ,))
+        detected_logits = np.zeros((MAX_NUM_OBJ, NUM_CLASSES))
+
+        if anno['dataset'] != 'structured3d':  # s3d not used groupfree
             (
                 all_detected_bboxes, all_detected_bbox_label_mask,
                 detected_class_ids, detected_logits
@@ -1071,6 +1075,51 @@ class Joint3DDataset_DC(Dataset):
                 ]]
                 for ind in anno['target_id']
             ])
+
+        # vis
+        # wandb.init(project="vis_s3d", name="gt_s3d")
+        # point_cloud_vis = torch.from_numpy(point_cloud.astype(np.float32))
+        # og_color_vis = torch.from_numpy(og_color.astype(np.float32))
+        # point_cloud_vis[:, 3:] = (og_color_vis + torch.tensor([109.8, 97.2, 83.8]) / 256) * 256
+        # blue = torch.tensor([0.0, 0.0, 255.0])
+        # white = torch.tensor([255.0, 255.0, 255.0])
+
+        # utterances = (
+        #         ' '.join(anno['utterance'].replace(',', ' ,').split())
+        #         + ' . not mentioned'
+        #     )
+        # gt_box = box2points(gt_bboxes[..., :6])
+
+        # gt_cloud = point_cloud_vis
+        # gt_mask_idx = gt_masks.astype(np.int64)[0] == 1
+        # gt_cloud[gt_mask_idx, 3:] = blue
+
+        # area_set = set(point_instance_label.tolist())
+        # ins_cloud = point_cloud_vis
+        # ins_cloud[..., 3:] = white
+        # for area in area_set:
+        #     idx = point_instance_label == area
+        #     random_color = (torch.rand(3) * 256.0).float()
+        #     ins_cloud[idx, 3:] = random_color
+
+        # wandb.log({
+        #         "point_scene": wandb.Object3D({
+        #             "type": "lidar/beta",
+        #             "points": ins_cloud,
+        #             "boxes": np.array(
+        #                 [
+        #                     {
+        #                         "corners": c.tolist(),
+        #                         "label": "target",
+        #                         "color": [0, 255, 0]
+        #                     }
+        #                     for c in gt_box
+        #                 ]
+        #             )
+        #         }),
+        #         "utterance": wandb.Html(utterances),
+        #     })
+
         ret_dict = {
             'box_label_mask': box_label_mask.astype(np.float32),
             'center_label': gt_bboxes[:, :3].astype(np.float32),

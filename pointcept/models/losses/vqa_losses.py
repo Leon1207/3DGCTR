@@ -72,6 +72,7 @@ def _iou3d_par(box_a, box_b):
     vol_a = _volume_par(box_a)
     vol_b = _volume_par(box_b)
     union = vol_a[:, None] + vol_b[None, :] - intersection
+    # union[union == 0.]= 1e-10  # debug
     return intersection / union, union
 
 # BRIEF 3DIoU loss
@@ -95,6 +96,9 @@ def generalized_box_iou3d(boxes1, boxes2):
 
     wh = (rb - lt).clamp(min=0)  # [N,M,3]
     volume = wh[:, :, 0] * wh[:, :, 1] * wh[:, :, 2]
+
+    # if True in np.isnan(iou.detach().cpu().numpy()):  # debug
+    #     print(boxes2)
 
     return iou - (volume - union) / volume
 
@@ -342,6 +346,9 @@ class HungarianMatcher(nn.Module):
             + self.cost_giou * cost_giou        # 2 * ([B*Q, 2])
             + self.cost_masks * cost_masks
         ).view(bs, num_queries, -1).cpu()
+
+        if True in np.isnan(C.detach().cpu().numpy()):  # debug
+            print(C)
 
         sizes = [len(v["boxes"]) for v in targets]
         indices = [ 

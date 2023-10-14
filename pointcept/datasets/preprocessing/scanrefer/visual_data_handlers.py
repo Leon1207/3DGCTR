@@ -304,9 +304,8 @@ class S3D:
         # Load points and color
         data = torch.load(osp.join(self.top_scan_dir, scene, room + '.pth'))
         label = data["semantic_gt"].reshape([-1])
-        color = data["color"]
+        color = data["color"] / 256.0
         pc = data["coord"]
-        # pc = self.align_to_axes(pc)  # global alignment of the scan, but seems S3D dosen't have.
 
         # Keep a specific number of points
         np.random.seed(1184)
@@ -339,14 +338,17 @@ class S3D:
         # Iterate over objects
         self.three_d_objects = []
         object_ids = set(instances)
-        for cnt, ids in enumerate(object_ids):
+        cnt = 0
+        for ids in object_ids:
             points = np.where(instances == int(ids))[0]
             seg_label = segments[points]
-            self.three_d_objects.append(dict({
-                'object_id': cnt,
-                'points': np.array(points),
-                'instance_label': self.class_label25[max(list(seg_label), key=list(seg_label).count)]
-            }))
+            if len(points) > 100:  # filter small object
+                self.three_d_objects.append(dict({
+                    'object_id': cnt,
+                    'points': np.array(points),
+                    'instance_label': self.class_label25[max(list(seg_label), key=list(seg_label).count)]
+                }))
+                cnt += 1
                 
         # Filter duplicate boxes
         obj_list = []
@@ -397,7 +399,7 @@ class S3D:
 
     def get_object_semantic_label(self, object_id):
         """Get an object's semantic label (coarse-grained), but same as instance label."""
-        return self.get_object_instance_label(idx)
+        return self.get_object_instance_label(object_id)
 
     def get_object_bbox(self, object_id):
         """Get an object's bounding box."""
