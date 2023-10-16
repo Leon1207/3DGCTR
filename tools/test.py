@@ -70,7 +70,7 @@ def main_worker(cfg):
                                               batch_size=cfg.batch_size_test_per_gpu,
                                               shuffle=False,
                                               num_workers=cfg.batch_size_test_per_gpu,
-                                              pin_memory=True,
+                                              pin_memory=False,
                                               sampler=test_sampler,
                                               collate_fn=tester.collate_fn)
     tester(cfg, test_loader, model)

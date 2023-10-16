@@ -220,7 +220,7 @@ class Trainer(TrainerBase):
                                                    num_workers=self.cfg.num_worker_per_gpu,
                                                    sampler=train_sampler,
                                                    collate_fn=partial(point_collate_fn, mix_prob=self.cfg.mix_prob),
-                                                   pin_memory=True,
+                                                   pin_memory=False,
                                                    worker_init_fn=init_fn,
                                                    drop_last=True,
                                                    persistent_workers=True)
@@ -238,7 +238,7 @@ class Trainer(TrainerBase):
                                                      batch_size=self.cfg.batch_size_val_per_gpu,
                                                      shuffle=False,
                                                      num_workers=self.cfg.num_worker_per_gpu,
-                                                     pin_memory=True,
+                                                     pin_memory=False,
                                                      sampler=val_sampler,
                                                      collate_fn=collate_fn)
         return val_loader

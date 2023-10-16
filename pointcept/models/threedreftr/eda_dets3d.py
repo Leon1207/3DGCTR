@@ -160,6 +160,7 @@ class EDA(nn.Module):
         tokenized = self.tokenizer.batch_encode_plus(
             data_dict['text'], padding="longest", return_tensors="pt"
         ).to(data_dict['point_clouds'].device)
+        # tokenized = data_dict['tokenized'].to(data_dict['point_clouds'].device)
         
         encoded_text = self.text_encoder(**tokenized)
         text_feats = self.text_projector(encoded_text.last_hidden_state)

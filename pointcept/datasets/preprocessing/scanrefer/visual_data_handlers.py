@@ -287,10 +287,10 @@ class S3D:
         self.pc, self.semantic_label_idx, self.color = self.load_point_cloud()
         self.orig_pc = np.copy(self.pc)  # this won't be augmented
         self.three_d_objects = None  # will save a list of objects here
-        # some modifies to fit nyu40class: shelves -> shelf, television -> tv, otherstructure -> structure, otherfurniture -> furniture, otherprop -> object
+        # some modifies to fit nyu40class: shelves -> shelf, television -> tv, otherstructure -> structure, otherfurniture -> furniture, otherprop -> furniture
         self.class_label25 = ("wall", "floor", "cabinet", "bed", "chair", "sofa", "table", "door", "window", "picture", "desk",
                    "shelf", "curtain", "dresser", "pillow", "mirror", "ceiling", "refrigerator", "tv",
-                   "nightstand", "sink", "lamp", "structure", "furniture", "object")  
+                   "nightstand", "sink", "lamp", "structure", "furniture", "furniture")  
         if load_objects:
             self.load_point_clouds_of_all_objects()
 
