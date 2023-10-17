@@ -1,19 +1,19 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 32 # bs: total bs in all gpus  108
+batch_size = 8 # bs: total bs in all gpus  108
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
 num_worker = 2
-batch_size_val = 32
-batch_size_test = 32
-eval_freq = 10
+batch_size_val = 8
+batch_size_test = 8
+eval_freq = 1
 
 # model settings
 model = dict(
     type="DefaultGrounder",
     backbone=dict(
-        type="eda_dets3d",
+        type="eda_ptv2_dets3d",
         butd="False"  # not used butd
     ),
     losses=['boxes', 'labels', 'contrastive_align']

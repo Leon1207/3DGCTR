@@ -136,10 +136,10 @@ class Joint3DDataset_DC(Dataset):
                  split='train',
                  data_root='./',
                  transform=None,
-                 dataset_dict={'scanrefer': 1, 'scannet': 10},
-                 test_dataset='scanrefer',
-                #  dataset_dict={'structured3d': 1},  # s3d pretrain
-                #  test_dataset='structured3d',
+                #  dataset_dict={'scanrefer': 1, 'scannet': 10},
+                #  test_dataset='scanrefer',
+                 dataset_dict={'structured3d': 1},  # s3d pretrain
+                 test_dataset='structured3d',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
@@ -211,7 +211,7 @@ class Joint3DDataset_DC(Dataset):
         self.scanrefer = SCANREFER['language'][self.split]
         self.scan_names = SCANREFER['scene_list'][self.split]
         self.gathered_language = self.preprocess_and_gather_language()
-        self.max_des_len = 32
+        self.max_des_len = 32  # dense caption length
 
         if os.path.exists('data/cls_results.json'):
             with open('data/cls_results.json') as fid:
@@ -1293,15 +1293,15 @@ class Joint3DDataset_DC(Dataset):
             "source_xzy": point_cloud[..., 0:3].astype(np.float32)
         })
 
-        # preprocess tkenizer for dense caption
-        if self.split == 'train':
+        # preprocess tokenizer for dense caption (not in pretrain stage)
+        if self.split == 'train' and anno['dataset'] != 'structured3d':
             scene_caption = []
             scan_name = anno['scan_id']
             dc_scannet_path = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/scannet/scannet_data'  # modify
             instance_bboxes = np.load(
                 os.path.join(dc_scannet_path, scan_name) + "_aligned_bbox.npy"
             )
-            if scan_name in self.gathered_language: # 这个dict的key-val是scene_name-dict，每个子dict的key-val是instance_id-captions
+            if scan_name in self.gathered_language:
                 for instance_id in instance_bboxes[:, -1]:
                     if instance_id not in self.gathered_language[scan_name]:
                         caption = ''
@@ -1309,7 +1309,7 @@ class Joint3DDataset_DC(Dataset):
                         caption = random.choice(
                             self.gathered_language[scan_name][instance_id]
                         )
-                    scene_caption.append(caption) # 单个场景的captions按照instance_bboxes的顺序被装进同一个list中，
+                    scene_caption.append(caption)
 
             if len(scene_caption) > 0:  # scannet will use *_01 scene, there, how to split DC and RES data into differet batch?
                 reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))  # [132, 32]

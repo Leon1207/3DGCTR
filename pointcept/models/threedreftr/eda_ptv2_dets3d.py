@@ -15,7 +15,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from transformers import RobertaModel, RobertaTokenizerFast
 
-from .backbone_module import Pointnet2Backbone
+from .backbone_ptv2maxpool import PMBEMBAttn
 from .modules import (
     PointsObjClsModule, GeneralSamplingModule,
     ClsAgnosticPredictHead, PositionEmbeddingLearned
@@ -24,10 +24,11 @@ from .encoder_decoder_layers import (
     BiEncoder, BiEncoderLayer, BiDecoderLayer
 )
 from pointcept.models.builder import MODELS
+import importlib
 
 
-@MODELS.register_module("eda_dets3d")
-class EDA(nn.Module):
+@MODELS.register_module("eda_ptv2_dets3d")
+class EDA_ptv2(nn.Module):
     """
     3D language grounder.
 
@@ -62,7 +63,7 @@ class EDA(nn.Module):
         self.contrastive_align_loss = contrastive_align_loss
 
         # Visual encoder
-        self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
+        self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)  # ptv2
 
         if input_feature_dim == 3 and pointnet_ckpt is not None:
             self.backbone_net.load_state_dict(torch.load(
@@ -143,6 +144,12 @@ class EDA(nn.Module):
                 nn.Linear(d_model, 64)
             )
 
+        # Caption head
+        captioner_module = importlib.import_module(
+            f'models.{args.captioner}.captioner'
+        )
+        self.captioner = captioner_module.captioner(args, train_dataset)
+
         # Init
         self.init_bn_momentum()
     
@@ -160,7 +167,6 @@ class EDA(nn.Module):
         tokenized = self.tokenizer.batch_encode_plus(
             data_dict['text'], padding="longest", return_tensors="pt"
         ).to(data_dict['point_clouds'].device)
-        # tokenized = data_dict['tokenized'].to(data_dict['point_clouds'].device)
         
         encoded_text = self.text_encoder(**tokenized)
         text_feats = self.text_projector(encoded_text.last_hidden_state)
@@ -275,6 +281,7 @@ class EDA(nn.Module):
         base_xyz = proposal_center.detach().clone()
         base_size = proposal_size.detach().clone()
         query_mask = None
+        query_last = None
 
         # STEP 7. Decoder
         for i in range(self.num_decoder_layers):
@@ -314,6 +321,10 @@ class EDA(nn.Module):
             )
             base_xyz = base_xyz.detach().clone()
             base_size = base_size.detach().clone()
+            query_last = query
+
+        # caption head
+
 
         return end_points
 
