@@ -105,3 +105,52 @@ class DefaultGrounder(nn.Module):
         else:
             self.set_criterion.eval()
             return end_points
+
+
+@MODELS.register_module()
+class DefaultCaptioner(nn.Module):
+    def __init__(self, 
+                 backbone=None, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+        super().__init__()
+        self.backbone = build_model(backbone)
+        matcher = HungarianMatcher(1, 0, 2, True)
+        self.set_criterion = SetCriterion(
+                matcher=matcher,
+                losses=losses, eos_coef=0.1, temperature=0.07)
+        self.criterion = compute_hungarian_loss
+
+    def forward(self, input_dict):
+
+        inputs = {
+            'point_clouds': input_dict['point_clouds'].float(), 
+            'text': input_dict['utterances'],                   
+            "det_boxes": input_dict['all_detected_boxes'],      
+            "det_bbox_label_mask": input_dict['all_detected_bbox_label_mask'],  
+            "det_class_ids": input_dict['all_detected_class_ids'],   
+            "offset": input_dict['offset'],
+            "source_xzy": input_dict['source_xzy'],
+            "reference_tokens": input_dict['reference_tokens'],
+            "reference_masks": input_dict['reference_masks'],
+            "box_label_mask": input_dict['box_label_mask'],
+            "center_label": input_dict['center_label'],
+            "size_gts": input_dict['size_gts'],
+            "sem_cls_label": input_dict['sem_cls_label'],
+            "superpoint": input_dict['superpoint'],
+            "positive_map": input_dict['positive_map']
+        }    
+
+        end_points = self.backbone(inputs)
+        end_points.update(input_dict)
+        # train
+        if self.training:
+            loss, end_points = self.criterion(
+            end_points, 6,
+            self.set_criterion,
+            query_points_obj_topk=5
+        )
+            return dict(loss=loss)
+        # eval
+        else:
+            self.set_criterion.eval()
+            return end_points

@@ -585,10 +585,179 @@ class GroundingEvaluator(HookBase):
         )
 
 
+@HOOKS.register_module()
+class CaptionEvaluator(HookBase):
+
+    def __init__(self, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+        super().__init__()
+        self.losses = losses
+
+    def after_epoch(self):
+        if self.trainer.cfg.evaluate:
+            if (self.trainer.epoch + 1) % self.trainer.cfg.eval_freq == 0:
+                self.eval()
+            else:
+                self.trainer.comm_info["current_metric_value"] = 0.0  # save for saver
+                self.trainer.comm_info["current_metric_name"] = ""  # save for saver
+
+    def eval(self):
+        self.trainer.logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
+        self.trainer.model.eval()
+
+        matcher = HungarianMatcher(1, 0, 2, True)
+        set_criterion = SetCriterion(
+                matcher=matcher,
+                losses=self.losses, eos_coef=0.1, temperature=0.07)
+        criterion = compute_hungarian_loss
+        prefixes = ['last_', 'proposal_']
+        prefixes += [f'{i}head_' for i in range(5)]
+        evaluator = Gdeval(
+            only_root=True, thresholds=[0.25, 0.5],     # TODO only_root=True
+            topks=[1, 5, 10], prefixes=prefixes,
+            filter_non_gt_boxes=False,
+            logger=self.trainer.logger, losses=self.losses
+        )
+        for batch_idx, batch_data in enumerate(self.trainer.val_loader):
+            # note forward and compute loss
+            
+            inputs = self._to_gpu(batch_data)
+
+            if "train" not in inputs:
+                inputs.update({"train": False})
+            else:
+                inputs["train"] = False
+
+            # STEP Forward pass
+            end_points = self.trainer.model(inputs)
+
+            # STEP Compute loss
+            _, end_points = criterion(
+                end_points, 6,
+                set_criterion,
+                query_points_obj_topk=5
+            )
+
+            # caption eval: proposal_tokens: batch x nprop x nprefix x channel
+            prefix_tokens = end_points['object_features']
+            
+            batch, nproposals, nprefix, channel = prefix_tokens.shape # torch.Size([8, 256, 1, 256])
+            
+            caption_output = OrderedDict()
+            
+            for batch_id in range(batch):
+                scene_cap_output = generation(
+                    self.transformer, 
+                    inputs_embeds=prefix_tokens[batch_id],
+                    encoder_hidden_states=\
+                        None if end_points.get('encoder_hidden_states', None) is None else \
+                            end_points['encoder_hidden_states'][batch_id],
+                    **self.caption_config
+                )
+                # update scene output to batch output
+                for key, tensor in scene_cap_output.items():
+                    caption_output[key] = caption_output.get(key, []) + [tensor]
+            
+            for key, tensor in caption_output.items():
+                caption_output[key] = torch.cat(caption_output[key], dim=0)
+            
+            captions = self.tokenizer.batch_decode( # list of strings
+                caption_output['output_ids'].tolist(),#torch.Size([2048, 32]), batch merge npropasals so get 2048
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False
+            )
+            
+            end_points['lang_cap'] = [
+                [
+                    'sos ' + captions[batch_id * nproposals + prop_id] + ' eos' \
+                        for prop_id in range(nproposals)
+                ] \
+                for batch_id in range(batch)
+            ]
+
+            for key in end_points:
+                if 'pred_size' in key:
+                    end_points[key] = torch.clamp(end_points[key], min=1e-6)
+
+            # Accumulate statistics and print out
+            stat_dict = {}
+            stat_dict = self._accumulate_stats(stat_dict, end_points)
+            if (batch_idx + 1) % 50 == 0:
+                self.trainer.logger.info(f'Eval: [{batch_idx + 1}/{len(self.trainer.val_loader)}]  ')
+                self.trainer.logger.info(''.join([
+                    f'{key} {stat_dict[key] / (float(batch_idx + 1)):.4f} \t'
+                    for key in sorted(stat_dict.keys())
+                    if 'loss' in key and 'proposal_' not in key
+                    and 'last_' not in key and 'head_' not in key
+                ]))
+
+            if evaluator is not None:
+                for prefix in prefixes:
+                    # note only consider the last layer
+                    if prefix != 'last_':
+                        continue
+
+                    # evaluation
+                    evaluator.evaluate(end_points, prefix)  
+
+            self.trainer.comm_info["current_metric_value"] = evaluator.get_best()  # save for saver
+            self.trainer.comm_info["current_metric_name"] = ""  # save for saver
+            
+        evaluator.print_stats()
+        self.trainer.logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
+
+    def _accumulate_stats(self, stat_dict, end_points):
+        for key in end_points:
+            if 'loss' in key or 'acc' in key or 'ratio' in key:
+                if key not in stat_dict:
+                    stat_dict[key] = 0
+                if isinstance(end_points[key], (float, int)):
+                    stat_dict[key] += end_points[key]
+                else:
+                    stat_dict[key] += end_points[key].item()
+        return stat_dict
+    
+    def _to_gpu(self, data_dict):
+        if torch.cuda.is_available():
+            for key in data_dict:
+                if isinstance(data_dict[key], torch.Tensor):
+                    data_dict[key] = data_dict[key].cuda(non_blocking=True)
+        return data_dict
+    
+    def after_train(self):
+        self.trainer.logger.info(
+            "Best {}: {:.4f}".format("allAcc", self.trainer.best_metric_value)
+        )
+
+
 
 from tqdm import tqdm
 from multiprocessing import Pool
 from scipy.spatial import ConvexHull
+
+def calc_iou(box_a, box_b):
+    """Computes IoU of two axis aligned bboxes.
+    Args:
+        box_a, box_b: 6D of center and lengths        
+    Returns:
+        iou
+    """
+
+    max_a = box_a[0:3] + box_a[3:6] / 2
+    max_b = box_b[0:3] + box_b[3:6] / 2
+    min_max = np.array([max_a, max_b]).min(0)
+
+    min_a = box_a[0:3] - box_a[3:6] / 2
+    min_b = box_b[0:3] - box_b[3:6] / 2
+    max_min = np.array([min_a, min_b]).max(0)
+    if not ((min_max > max_min).all()):
+        return 0.0
+
+    intersection = (min_max - max_min).prod()
+    vol_a = box_a[3:6].prod()
+    vol_b = box_b[3:6].prod()
+    union = vol_a + vol_b - intersection
+    return 1.0 * intersection / union
 
 def get_iou(bb1, bb2):
     iou3d = calc_iou(bb1, bb2)

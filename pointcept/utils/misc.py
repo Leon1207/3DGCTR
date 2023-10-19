@@ -11,6 +11,7 @@ from collections import abc
 import numpy as np
 import torch
 from importlib import import_module
+from typing import List
 
 
 class AverageMeter(object):
@@ -158,3 +159,15 @@ def import_modules_from_strings(imports, allow_failed_imports=False):
     if single_import:
         imported = imported[0]
     return imported
+
+
+@torch.jit.ignore
+def to_list_1d(arr) -> List[float]:
+    arr = arr.detach().cpu().numpy().tolist()
+    return arr
+
+
+@torch.jit.ignore
+def to_list_3d(arr) -> List[List[List[float]]]:
+    arr = arr.detach().cpu().numpy().tolist()
+    return arr

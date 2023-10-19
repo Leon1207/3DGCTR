@@ -24,8 +24,6 @@ from .encoder_decoder_layers import (
     BiEncoder, BiEncoderLayer, BiDecoderLayer
 )
 from pointcept.models.builder import MODELS
-import importlib
-
 
 @MODELS.register_module("eda_ptv2_dets3d")
 class EDA_ptv2(nn.Module):
@@ -143,12 +141,6 @@ class EDA_ptv2(nn.Module):
                 nn.ReLU(),
                 nn.Linear(d_model, 64)
             )
-
-        # Caption head
-        captioner_module = importlib.import_module(
-            f'models.{args.captioner}.captioner'
-        )
-        self.captioner = captioner_module.captioner(args, train_dataset)
 
         # Init
         self.init_bn_momentum()
@@ -281,7 +273,6 @@ class EDA_ptv2(nn.Module):
         base_xyz = proposal_center.detach().clone()
         base_size = proposal_size.detach().clone()
         query_mask = None
-        query_last = None
 
         # STEP 7. Decoder
         for i in range(self.num_decoder_layers):
@@ -321,10 +312,6 @@ class EDA_ptv2(nn.Module):
             )
             base_xyz = base_xyz.detach().clone()
             base_size = base_size.detach().clone()
-            query_last = query
-
-        # caption head
-
 
         return end_points
 

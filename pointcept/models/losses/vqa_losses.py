@@ -343,9 +343,6 @@ class HungarianMatcher(nn.Module):
             + self.cost_masks * cost_masks
         ).view(bs, num_queries, -1).cpu()
 
-        if True in np.isnan(C.detach().cpu().numpy()):  # debug
-            print(C)
-
         sizes = [len(v["boxes"]) for v in targets]
         indices = [ 
             linear_sum_assignment(c[i])
@@ -538,6 +535,26 @@ class SetCriterion(nn.Module):
         }
 
         return losses
+    
+    # Caption Loss
+    def loss_caption(self, outputs, targets, indices, num_boxes, auxi_indices):
+        loss_config = {'reduction': 'none', 'ignore_index': 0}
+        nvocabs = 3433  # lenght of tokneizer
+        losses = {}
+        cap_loss = 0.0
+        
+        if 'pred_captions' in outputs:
+            o = outputs["pred_captions"]
+            t = targets[0]["captions"]  # targets only use once, means they are the same in one batch
+            loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config)  
+            loss_per_word = loss_per_word.detach().cpu().numpy().reshape(t.shape)  # avoid some bugs
+            loss_per_word = torch.from_numpy(loss_per_word).to(o.device)
+            cap_loss = torch.sum(loss_per_word * (t != 0).float()) / torch.sum(
+                torch.sum(t != 0).float() + 1e-6
+            )
+
+        losses['loss_caption'] = cap_loss
+        return losses
 
     ############################
     # BRIEF semantic alignment #
@@ -699,7 +716,8 @@ class SetCriterion(nn.Module):
             'boxes': self.loss_boxes,      # box loss
             'masks': self.loss_masks,      # mask loss
             'labels': self.loss_pos_align, # position alignment
-            'contrastive_align': self.loss_sem_align   # semantic alignment
+            'contrastive_align': self.loss_sem_align,   # semantic alignment
+            'captions': self.loss_caption  # dense caption loss
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_boxes, auxi_indices, **kwargs)
@@ -757,6 +775,9 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
     gt_labels = end_points['sem_cls_label']
     gt_bbox = torch.cat([gt_center, gt_size], dim=-1)
     gt_masks = end_points['gt_masks']
+    gt_captions = 1
+    if "caption_target" in end_points.keys():
+        gt_captions = end_points['caption_target']
     # text
     positive_map = end_points['positive_map']               # main obj.
     modify_positive_map = end_points['modify_positive_map'] # attribute(modify)
@@ -772,6 +793,7 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             "labels": gt_labels[b, box_label_mask[b].bool()],
             "boxes": gt_bbox[b, box_label_mask[b].bool()],
             "masks": gt_masks[b, box_label_mask[b].bool()],
+            "captions": gt_captions,  # same in one batch
             "positive_map": positive_map[b, box_label_mask[b].bool()],
             "modify_positive_map": modify_positive_map[b, box_label_mask[b].bool()],
             "pron_positive_map": pron_positive_map[b, box_label_mask[b].bool()],
@@ -783,7 +805,7 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
         for b in range(gt_labels.shape[0])
     ]
 
-    loss_ce, loss_bbox, loss_giou, loss_sem_align, loss_mask, loss_dice = 0, 0, 0, 0, 0, 0
+    loss_ce, loss_bbox, loss_giou, loss_sem_align, loss_mask, loss_dice, loss_caption = 0, 0, 0, 0, 0, 0, 0
     for prefix in prefixes:
         output = {}
         if 'proj_tokens' in end_points:
@@ -802,6 +824,8 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
         output["language_dataset"] = end_points["language_dataset"] # dataset
         if prefix == 'last_' and ("last_pred_masks" in end_points):
             output["pred_masks"] = end_points["last_pred_masks"]
+        if prefix == 'last_' and ("caption_logits" in end_points):
+            output["pred_captions"] = end_points["caption_logits"][0]
 
         # NOTE Compute all the requested losses, forward
         losses, _ = set_criterion(output, target)
@@ -815,6 +839,8 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             loss_dice += losses.get('loss_dice')
         if 'proj_tokens' in end_points:
             loss_sem_align += losses['loss_sem_align']
+        if "caption_logits" in end_points:
+            loss_caption += losses['loss_caption']
 
     if 'seeds_obj_cls_logits' in end_points.keys():
         query_points_generation_loss = compute_points_obj_cls_loss_hard_topk(
@@ -834,8 +860,9 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             + 5 * loss_bbox
             + loss_giou
             + weight * loss_sem_align
-        ) + 10 * loss_mask + 2 * loss_dice
+        ) + 10 * loss_mask + 2 * loss_dice + 5 * loss_caption
     )
+    print(loss_caption)  # debug
     end_points['loss_ce'] = loss_ce
     end_points['loss_bbox'] = loss_bbox
     end_points['loss_giou'] = loss_giou
@@ -844,4 +871,5 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
     end_points['loss'] = loss
     end_points['loss_mask'] = loss_mask
     end_points['loss_dice'] = loss_dice
+    end_points['loss_caption'] = loss_caption
     return loss, end_points

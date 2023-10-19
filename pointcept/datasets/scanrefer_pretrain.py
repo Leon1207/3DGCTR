@@ -48,88 +48,9 @@ DC = ScannetDatasetConfig(NUM_CLASSES)
 DC18 = ScannetDatasetConfig(18)
 MAX_NUM_OBJ = 132
 
-DATA_ROOT = '/userhome/lyd/Pointcept/pointcept/datasets/preprocessing/scanrefer/meta_data'  # modify
-SCANREFER = {
-    'language': {
-        'train': json.load(
-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_train.json"), "r")
-        ),
-        'val': json.load(
-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_val.json"), "r")
-        )
-    },
-    'scene_list': {
-        'train': open(os.path.join(
-            DATA_ROOT, 'ScanRefer_filtered_train.txt'
-        ), 'r').read().split(),
-        'val': open(os.path.join(
-            DATA_ROOT, 'ScanRefer_filtered_val.txt'
-        ), 'r').read().split()
-    },
-    'vocabulary': json.load(
-        open(os.path.join(DATA_ROOT, "ScanRefer_vocabulary.json"), "r")
-    )
-}
-
-class ScanReferTokenizer:
-    def __init__(self, word2idx: Dict):
-        self.word2idx = {word: int(index) for word, index in word2idx.items()}
-        self.idx2word = {int(index): word for word, index in word2idx.items()}
-        
-        self.pad_token = None
-        self.bos_token = 'sos'
-        self.bos_token_id = word2idx[self.bos_token]
-        self.eos_token = 'eos'
-        self.eos_token_id = word2idx[self.eos_token]
-        
-    def __len__(self) -> int: return len(self.word2idx)
-    
-    def __call__(self, token: str) -> int: 
-        token = token if token in self.word2idx else 'unk'
-        return self.word2idx[token]
-    
-    def encode(self, sentence: str) -> List:
-        if not sentence: 
-            return []
-        return [self(word) for word in sentence.split(' ')]
-    
-    def batch_encode_plus(
-        self, sentences: List[str], max_length: int=None, **tokenizer_kwargs: Dict
-    ) -> Dict:
-        
-        raw_encoded = [self.encode(sentence) for sentence in sentences]
-        
-        if max_length is None:  # infer if not presented
-            max_length = max(map(len, raw_encoded))
-            
-        token = np.zeros((len(raw_encoded), max_length))
-        masks = np.zeros((len(raw_encoded), max_length))
-        
-        for batch_id, encoded in enumerate(raw_encoded):
-            length = min(len(encoded), max_length)
-            if length > 0:
-                token[batch_id, :length] = encoded[:length]
-                masks[batch_id, :length] = 1
-        
-        if tokenizer_kwargs['return_tensors'] == 'pt':
-            token, masks = torch.from_numpy(token), torch.from_numpy(masks)
-        
-        return {'input_ids': token, 'attention_mask': masks}
-    
-    def decode(self, tokens: List[int]) -> List[str]:
-        out_words = []
-        for token_id in tokens:
-            if token_id == self.eos_token_id: 
-                break
-            out_words.append(self.idx2word[token_id])
-        return ' '.join(out_words)
-    
-    def batch_decode(self, list_tokens: List[int], **kwargs) -> List[str]:
-        return [self.decode(tokens) for tokens in list_tokens]
-
 
 @DATASETS.register_module()
-class Joint3DDataset_DC(Dataset):
+class Joint3DDataset_Pretrain(Dataset):
     """Dataset utilities for ReferIt3D."""
 
     def __init__(self, 
@@ -137,10 +58,9 @@ class Joint3DDataset_DC(Dataset):
                  data_root='./',
                  transform=None,
                 #  dataset_dict={'scanrefer': 1, 'scannet': 10},  # training on rec
-                 dataset_dict={'scanrefer': 1},  # training on captions
-                 test_dataset='scanrefer',
-                #  dataset_dict={'structured3d': 1},  # pretrain with s3d 
-                #  test_dataset='structured3d',
+                #  test_dataset='scanrefer',
+                 dataset_dict={'structured3d': 1},  # pretrain with s3d 
+                 test_dataset='structured3d',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
@@ -207,13 +127,6 @@ class Joint3DDataset_DC(Dataset):
         # self.tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
         # 2) offline
         self.tokenizer = RobertaTokenizerFast.from_pretrained(f'{self.data_path}/roberta-base/', local_files_only=True)
-        # prepared dense caption's tokenizer
-        self.tokenizer_dc = ScanReferTokenizer(SCANREFER['vocabulary']['word2idx'])
-        self.tokenizer_dc.pad_token = self.tokenizer_dc.eos_token
-        self.scanrefer = SCANREFER['language'][self.split]
-        self.scan_names = SCANREFER['scene_list'][self.split]
-        self.gathered_language = self.preprocess_and_gather_language()
-        self.max_des_len = 32  # dense caption length
 
         if os.path.exists('data/cls_results.json'):
             with open('data/cls_results.json') as fid:
@@ -230,28 +143,37 @@ class Joint3DDataset_DC(Dataset):
         # step 4. load datasets for structured3D
         self.s3ds = {}
         s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}'
-        # pkl_name = f'{split}_s3ds.pkl'
-        pkl_name = 'val_s3ds.pkl'  # debug
+        pkl_name = f'{split}_s3ds.pkl'
         total = 3000 if split == 'train' else 250
-        if not os.path.exists('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name):
-            for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
-                print("Process S3D scene: {}, total: {}/{}".format(dirpath.split('/')[-1], cnt, total))
-                for filename in filenames:
-                    scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
-                    self.s3ds[scene_id] = S3D(scene_id, s3d_data_path)
-                if cnt % 300 == 0:
-                    print("Saving...")
-                    pkl_name = 'train_s3ds_' + str(int(cnt / 300)) + '.pkl'
-                    pickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name, self.s3ds)
-                    self.s3ds.clear()
+        if split == 'train':
+            if not os.path.exists('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name):
+                for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
+                    print("Process S3D scene: {}, total: {}/{}".format(dirpath.split('/')[-1], cnt, total))
+                    for filename in filenames:
+                        scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
+                        self.s3ds[scene_id] = S3D(scene_id, s3d_data_path)
+                    if cnt % 300 == 0:
+                        print("Saving...")
+                        pkl_name = 'train_s3ds_' + str(int(cnt / 300)) + '.pkl'
+                        pickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name, self.s3ds)
+                        self.s3ds.clear()
+            else:
+                self.s3ds = {}
+                for cnt in range(1, 11):
+                    pkl_name = 'train_s3ds_' + str(cnt) + '.pkl'
+                    self.s3ds.update(unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name))
+                self.s3ds = list(self.s3ds)[0]
         else:
-            self.s3ds = unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name)
-            self.s3ds = list(self.s3ds)[0]
-            # self.s3ds = []
-            # for cnt in range(1, 11):
-            #     pkl_name = 'train_s3ds_' + str(cnt) + '.pkl'
-            #     self.s3ds.extend(unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name))
-            # self.s3ds = list(self.s3ds)[0]
+            if not os.path.exists('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name):
+                for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
+                    print("Process S3D scene: {}, total: {}/{}".format(dirpath.split('/')[-1], cnt, total))
+                    for filename in filenames:
+                        scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
+                        self.s3ds[scene_id] = S3D(scene_id, s3d_data_path)
+                    pickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name, self.s3ds)
+            else:
+                self.s3ds = unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name)
+                self.s3ds = list(self.s3ds)[0]
         
         # step 5. load text dataset
         if self.split != 'train':
@@ -395,7 +317,7 @@ class Joint3DDataset_DC(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader[:100]  # debug
+            for anno in reader  # debug
             if anno['scene_id'] in scan_ids
         ]
 
@@ -1042,22 +964,6 @@ class Joint3DDataset_DC(Dataset):
             all_detected_bboxes, all_detected_bbox_label_mask,
             detected_class_ids, detected_logits
         )
-    
-    def nested_dict(self):
-        return defaultdict(list)  # allow pickle
-
-    def preprocess_and_gather_language(self):
-        
-        gathered_language = defaultdict(self.nested_dict)
-        
-        for lang_dict in tqdm.tqdm(self.scanrefer):
-            scene_id  = lang_dict['scene_id']
-            object_id = int(lang_dict['object_id'])
-            
-            sentence  = ' '.join(lang_dict['token'] + [self.tokenizer_dc.eos_token])
-            gathered_language[scene_id][object_id].append(sentence)
-        
-        return gathered_language
 
     # BRIEF data
     def __getitem__(self, index):
@@ -1306,42 +1212,6 @@ class Joint3DDataset_DC(Dataset):
             "superpoint": superpoint,  # avoid bugs
             "source_xzy": point_cloud[..., 0:3].astype(np.float32)
         })
-
-        # preprocess tokenizer for dense caption (not in pretrain stage)
-        reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))  # [132, 32]
-        reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
-
-        # scannet will use *_01 scene, there, how to split DC and RES data into differet batch?
-        if self.split == 'train' and anno['dataset'] == 'scanrefer':
-            scene_caption = []
-            scan_name = anno['scan_id']
-            dc_scannet_path = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/scannet/scannet_data'  # modify
-            instance_bboxes = np.load(
-                os.path.join(dc_scannet_path, scan_name) + "_aligned_bbox.npy"
-            )
-            if scan_name in self.gathered_language:
-                for instance_id in instance_bboxes[:, -1]:
-                    if instance_id not in self.gathered_language[scan_name]:
-                        caption = ''
-                    else:
-                        caption = random.choice(
-                            self.gathered_language[scan_name][instance_id]
-                        )
-                    scene_caption.append(caption)
-
-            tokenizer_output = self.tokenizer_dc.batch_encode_plus(
-                scene_caption, 
-                max_length=self.max_des_len, 
-                padding='max_length', 
-                truncation='longest_first', 
-                return_tensors='np'
-            )
-            tokenizer_output['input_ids'] *= tokenizer_output['attention_mask']
-            reference_tokens[:len(instance_bboxes[:, -1])] = tokenizer_output['input_ids']
-            reference_masks[:len(instance_bboxes[:, -1])]  = tokenizer_output['attention_mask']
-            
-        ret_dict['reference_tokens'] = reference_tokens.astype(np.int64)
-        ret_dict['reference_masks'] = reference_masks.astype(np.float32)
 
         return ret_dict
 

@@ -4,6 +4,8 @@ from .s3dis import S3DISDataset
 from .scannet import ScanNetDataset, ScanNet200Dataset
 from .scanrefer import Joint3DDataset
 from .scanrefer_dc import Joint3DDataset_DC
+from .scanrefer_pretrain import Joint3DDataset_Pretrain
+from .scanrefer_jointdc import Joint3DDataset_JointDC
 from .scannet_pair import ScanNetPairDataset
 from .arkitscenes import ArkitScenesDataset
 from .structure3d import Structured3DDataset

@@ -24,6 +24,7 @@ from .encoder_decoder_layers import (
     BiEncoder, BiEncoderLayer, BiDecoderLayer
 )
 from pointcept.models.builder import MODELS
+from pointcept.models.threedreftr.captioner_dcc.captioner import Captioner
 
 
 @MODELS.register_module("eda_ptv2_dc")
@@ -142,6 +143,15 @@ class EDA_dc(nn.Module):
                 nn.ReLU(),
                 nn.Linear(d_model, 64)
             )
+
+        # Caption head
+        self.captioner = Captioner()
+        self.semcls_head = nn.Sequential(
+            nn.Conv1d(288, 18 + 1, 1, bias=False),  # 18 class + 1 non_object
+            nn.BatchNorm1d(18 + 1),
+            nn.ReLU(),
+            nn.Dropout(p=0.3)
+        )
 
         # Init
         self.init_bn_momentum()
@@ -274,6 +284,7 @@ class EDA_dc(nn.Module):
         base_xyz = proposal_center.detach().clone()
         base_size = proposal_size.detach().clone()
         query_mask = None
+        query_last = None
 
         # STEP 7. Decoder
         for i in range(self.num_decoder_layers):
@@ -313,6 +324,20 @@ class EDA_dc(nn.Module):
             )
             base_xyz = base_xyz.detach().clone()
             base_size = base_size.detach().clone()
+            query_last = query
+
+        # caption head
+        if not torch.all(data_dict['reference_tokens'] == 0).item():
+            end_points['reference_tokens'] = data_dict['reference_tokens']
+            end_points['reference_masks'] = data_dict['reference_masks']
+            end_points['query_last'] = query_last
+            cls_logits = self.semcls_head(query_last.transpose(1, 2)).transpose(1, 2)
+            cls_prob = torch.nn.functional.softmax(cls_logits, dim=-1)
+            end_points['objectness_prob'] = 1 - cls_prob[..., -1]
+            outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
+                  self.captioner(end_points, data_dict)
+            end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
+            end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
 
         return end_points
 
