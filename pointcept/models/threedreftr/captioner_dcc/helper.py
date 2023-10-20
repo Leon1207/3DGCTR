@@ -22,14 +22,18 @@ class Matcher(nn.Module):
     def forward(self, outputs, targets):
 
         batchsize = outputs["last_sem_cls_scores"].shape[0]
+        nqueries = outputs["last_sem_cls_scores"].shape[1]
+        ngt = targets["sem_cls_label"].shape[1]
         nactual_gt = targets["nactual_gt"]
 
         # classification cost: batch x nqueries x ngt matrix
         pred_cls_prob = outputs["last_sem_cls_scores"]
-        gt_box_sem_cls_labels = targets["positive_map"]
-        if pred_cls_prob.shape[-1] != gt_box_sem_cls_labels.shape[-1]:
-                gt_box_sem_cls_labels = gt_box_sem_cls_labels[..., :pred_cls_prob.shape[-1]]
-        class_mat = -torch.matmul(pred_cls_prob, gt_box_sem_cls_labels.transpose(-2, -1))
+        gt_box_sem_cls_labels = (
+            targets["sem_cls_label"]
+            .unsqueeze(1)
+            .expand(batchsize, nqueries, ngt)
+        )
+        class_mat = -torch.gather(pred_cls_prob, 2, gt_box_sem_cls_labels)
 
         # objectness cost: batch x nqueries x 1
         objectness_mat = -outputs["objectness_prob"].unsqueeze(-1)

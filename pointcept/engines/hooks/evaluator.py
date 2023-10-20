@@ -15,10 +15,18 @@ import pointcept.utils.comm as comm
 from pointcept.utils.misc import intersection_and_union_gpu
 from pointcept.utils.grounding_evaluator import GroundingEvaluator as Gdeval
 from pointcept.models.losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
+from collections import OrderedDict, defaultdict
+from pointcept.datasets.scanrefer_jointdc import SCANREFER
+from pointcept.datasets.misc import SmoothedValue
+from pointcept.utils.grounding_evaluator import _iou3d_par, box_cxcyczwhd_to_xyzxyz
+import pointcept.utils.capeval.bleu.bleu as capblue
+import pointcept.utils.capeval.cider.cider as capcider
+import pointcept.utils.capeval.rouge.rouge as caprouge
+import pointcept.utils.capeval.meteor.meteor as capmeteor
 
 from .default import HookBase
 from .builder import HOOKS
-import os 
+import os, json
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
@@ -585,13 +593,92 @@ class GroundingEvaluator(HookBase):
         )
 
 
+def prepare_corpus(raw_data, max_len: int=30) -> dict:
+    # helper function to prepare ground truth captions
+    corpus = defaultdict(list)
+    object_id_to_name = defaultdict(lambda:'unknown')
+    
+    for data in raw_data:
+        
+        (scene_id, object_id, object_name) = data["scene_id"], data["object_id"], data["object_name"]
+        
+        # parse language tokens
+        token = data["token"][:max_len]
+        description = " ".join(["sos"] + token + ["eos"])
+        key = f"{scene_id}|{object_id}|{object_name}"
+        object_id_to_name[f"{scene_id}|{object_id}"] = object_name
+        
+        corpus[key].append(description)
+        
+    return corpus, object_id_to_name
+
+
+def score_captions(corpus: dict, candidates: dict):
+    
+    bleu = capblue.Bleu(4).compute_score(corpus, candidates)
+    cider = capcider.Cider().compute_score(corpus, candidates)
+    rouge = caprouge.Rouge().compute_score(corpus, candidates)
+    meteor = capmeteor.Meteor().compute_score(corpus, candidates)
+    
+    score_per_caption = {
+        "bleu-1": [float(s) for s in bleu[1][0]],
+        "bleu-2": [float(s) for s in bleu[1][1]],
+        "bleu-3": [float(s) for s in bleu[1][2]],
+        "bleu-4": [float(s) for s in bleu[1][3]],
+        "cider": [float(s) for s in cider[1]],
+        "rouge": [float(s) for s in rouge[1]],
+        "meteor": [float(s) for s in meteor[1]],
+    }
+    
+    message = '\n'.join([
+        "[BLEU-1] Mean: {:.4f}, Max: {:.4f}, Min: {:.4f}".format(
+            bleu[0][0], max(bleu[1][0]), min(bleu[1][0])
+        ),
+        "[BLEU-2] Mean: {:.4f}, Max: {:.4f}, Min: {:.4f}".format(
+            bleu[0][1], max(bleu[1][1]), min(bleu[1][1])
+        ),
+        "[BLEU-3] Mean: {:.4f}, Max: {:.4f}, Min: {:.4f}".format(
+            bleu[0][2], max(bleu[1][2]), min(bleu[1][2])
+        ),
+        "[BLEU-4] Mean: {:.4f}, Max: {:.4f}, Min: {:.4f}".format(
+            bleu[0][3], max(bleu[1][3]), min(bleu[1][3])
+        ),
+        "[CIDEr] Mean: {:.4f}, Max: {:.4f}, Min: {:.4f}".format(
+            cider[0], max(cider[1]), min(cider[1])
+        ),
+        "[ROUGE-L] Mean: {:.4f}, Max: {:.4f}, Min: {:.4f}".format(
+            rouge[0], max(rouge[1]), min(rouge[1])
+        ),
+        "[METEOR] Mean: {:.4f}, Max: {:.4f}, Min: {:.4f}".format(
+            meteor[0], max(meteor[1]), min(meteor[1])
+        )
+    ])
+    
+    eval_metric = {
+        "BLEU-4": bleu[0][3],
+        "CiDEr": cider[0],
+        "Rouge": rouge[0],
+        "METEOR": meteor[0],
+    }
+    return score_per_caption, message, eval_metric
+
 @HOOKS.register_module()
 class CaptionEvaluator(HookBase):
 
     def __init__(self, 
-                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+                 losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
-        self.losses = losses
+        self.test_min_iou = 0.50
+        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"  # modify
+        self.criterion = f'CiDEr@{self.test_min_iou}'
+        dataset_config = ScannetDatasetConfig(18)
+        self.config_dict = {
+            'remove_empty_box': False, 'use_3d_nms': True,
+            'nms_iou': 0.3, 'use_old_type_nms': False, 'cls_nms': True,
+            'per_class_proposal': True, 'conf_thresh': 0.0,
+            'dataset_config': dataset_config,
+            'hungarian_loss': True
+        }
 
     def after_epoch(self):
         if self.trainer.cfg.evaluate:
@@ -599,111 +686,149 @@ class CaptionEvaluator(HookBase):
                 self.eval()
             else:
                 self.trainer.comm_info["current_metric_value"] = 0.0  # save for saver
-                self.trainer.comm_info["current_metric_name"] = ""  # save for saver
+                self.trainer.comm_info["current_metric_name"] = "CiDEr@0.5"  # save for saver
 
     def eval(self):
         self.trainer.logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
         self.trainer.model.eval()
-
-        matcher = HungarianMatcher(1, 0, 2, True)
-        set_criterion = SetCriterion(
-                matcher=matcher,
-                losses=self.losses, eos_coef=0.1, temperature=0.07)
-        criterion = compute_hungarian_loss
-        prefixes = ['last_', 'proposal_']
-        prefixes += [f'{i}head_' for i in range(5)]
-        evaluator = Gdeval(
-            only_root=True, thresholds=[0.25, 0.5],     # TODO only_root=True
-            topks=[1, 5, 10], prefixes=prefixes,
-            filter_non_gt_boxes=False,
-            logger=self.trainer.logger, losses=self.losses
+        
+        # prepare ground truth caption labels
+        print("preparing corpus...")
+        corpus, object_id_to_name = prepare_corpus(
+            SCANREFER['language']['val']
         )
-        for batch_idx, batch_data in enumerate(self.trainer.val_loader):
-            # note forward and compute loss
+        
+        ### initialize and prepare for evaluation
+        num_batches = len(self.trainer.val_loader)
+        time_delta = SmoothedValue(window_size=10)
+        candidates = {'caption': OrderedDict({}), 'iou': defaultdict(float)}
+        
+        for curr_iter, batch_data in enumerate(self.trainer.val_loader):
             
             inputs = self._to_gpu(batch_data)
-
-            if "train" not in inputs:
-                inputs.update({"train": False})
-            else:
-                inputs["train"] = False
-
-            # STEP Forward pass
-            end_points = self.trainer.model(inputs)
-
-            # STEP Compute loss
-            _, end_points = criterion(
-                end_points, 6,
-                set_criterion,
-                query_points_obj_topk=5
-            )
-
-            # caption eval: proposal_tokens: batch x nprop x nprefix x channel
-            prefix_tokens = end_points['object_features']
+            end_points = self.trainer.model(inputs, is_eval=True)
             
-            batch, nproposals, nprefix, channel = prefix_tokens.shape # torch.Size([8, 256, 1, 256])
+            # match objects
+            _, nqueries, _ =  end_points['last_center'].shape
+            gt_center = end_points['center_label'][:, :, 0:3]       
+            gt_size = end_points['size_gts']                        
+            gt_bboxes = torch.cat([gt_center, gt_size], dim=-1)
+            pred_center = end_points['last_center']  # B, Q=256, 3
+            pred_size = end_points['last_pred_size']  # (B,Q,3) (l,w,h)
+            pred_bbox = torch.cat([pred_center, pred_size], dim=-1)  # ([B, 256, 6])
+            match_box_ious, _ = _iou3d_par(
+                box_cxcyczwhd_to_xyzxyz(gt_bboxes),
+                box_cxcyczwhd_to_xyzxyz(pred_bbox)
+            )  # batch, nqueries, MAX_NUM_OBJ
             
-            caption_output = OrderedDict()
+            match_box_ious, match_box_idxs = match_box_ious.max(-1) # batch, nqueries
+            match_box_idxs = torch.gather(
+                batch_data['gt_box_object_ids'], 1, 
+                match_box_idxs
+            ) # batch, nqueries
             
-            for batch_id in range(batch):
-                scene_cap_output = generation(
-                    self.transformer, 
-                    inputs_embeds=prefix_tokens[batch_id],
-                    encoder_hidden_states=\
-                        None if end_points.get('encoder_hidden_states', None) is None else \
-                            end_points['encoder_hidden_states'][batch_id],
-                    **self.caption_config
-                )
-                # update scene output to batch output
-                for key, tensor in scene_cap_output.items():
-                    caption_output[key] = caption_output.get(key, []) + [tensor]
-            
-            for key, tensor in caption_output.items():
-                caption_output[key] = torch.cat(caption_output[key], dim=0)
-            
-            captions = self.tokenizer.batch_decode( # list of strings
-                caption_output['output_ids'].tolist(),#torch.Size([2048, 32]), batch merge npropasals so get 2048
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False
+            # ---- Checkout bounding box ious and semantic logits
+            good_bbox_masks = match_box_ious > self.test_min_iou     # batch, nqueries
+            good_bbox_masks &= end_points["sem_cls_logits"].argmax(-1) != (
+                end_points["sem_cls_logits"].shape[-1] - 1
             )
             
-            end_points['lang_cap'] = [
-                [
-                    'sos ' + captions[batch_id * nproposals + prop_id] + ' eos' \
-                        for prop_id in range(nproposals)
-                ] \
-                for batch_id in range(batch)
-            ]
+            # ---- add nms to get accurate predictions
+            nms_bbox_masks = parse_predictions(
+                end_points, self.config_dict, 'last',
+                size_cls_agnostic=True)
+            nms_bbox_masks = torch.from_numpy(nms_bbox_masks).long() == 1
+            good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)
+            
+            good_bbox_masks = good_bbox_masks.cpu().tolist()
+            
+            captions = end_points["lang_cap"]  # batch, nqueries, [sentence]
+            
+            match_box_idxs = match_box_idxs.cpu().tolist()
+            match_box_ious = match_box_ious.cpu().tolist()
+            ### calculate measurable indicators on captions
+            for idx, scene_id in enumerate(batch_data["scan_idx"].cpu().tolist()):
+                scene_name = SCANREFER['scene_list']['val'][scene_id]
+                for prop_id in range(nqueries):
 
-            for key in end_points:
-                if 'pred_size' in key:
-                    end_points[key] = torch.clamp(end_points[key], min=1e-6)
-
-            # Accumulate statistics and print out
-            stat_dict = {}
-            stat_dict = self._accumulate_stats(stat_dict, end_points)
-            if (batch_idx + 1) % 50 == 0:
-                self.trainer.logger.info(f'Eval: [{batch_idx + 1}/{len(self.trainer.val_loader)}]  ')
-                self.trainer.logger.info(''.join([
-                    f'{key} {stat_dict[key] / (float(batch_idx + 1)):.4f} \t'
-                    for key in sorted(stat_dict.keys())
-                    if 'loss' in key and 'proposal_' not in key
-                    and 'last_' not in key and 'head_' not in key
-                ]))
-
-            if evaluator is not None:
-                for prefix in prefixes:
-                    # note only consider the last layer
-                    if prefix != 'last_':
+                    if good_bbox_masks[idx][prop_id] is False:
                         continue
-
-                    # evaluation
-                    evaluator.evaluate(end_points, prefix)  
-
-            self.trainer.comm_info["current_metric_value"] = evaluator.get_best()  # save for saver
-            self.trainer.comm_info["current_metric_name"] = ""  # save for saver
+                    
+                    match_obj_id = match_box_idxs[idx][prop_id]
+                    match_obj_iou = match_box_ious[idx][prop_id]
+                    
+                    object_name = object_id_to_name[f"{scene_name}|{match_obj_id}"]
+                    key = f"{scene_name}|{match_obj_id}|{object_name}"
+                    
+                    if match_obj_iou > candidates['iou'][key]:
+                        candidates['iou'][key] = match_obj_iou
+                        candidates['caption'][key] = [
+                            captions[idx][prop_id]
+                        ]
             
-        evaluator.print_stats()
+            if curr_iter % 50 == 0:
+                mem_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
+                self.trainer.logger.info(
+                    f"Evaluate; Batch [{curr_iter}/{num_batches}]; "
+                    f"Iter time {time_delta.avg:0.2f}; Mem {mem_mb:0.2f}MB"
+                )
+        
+        ### message out
+        missing_proposals = len(corpus.keys() - candidates['caption'].keys())
+        total_captions = len(corpus.keys())
+        self.trainer.logger.info(
+            f"\n----------------------Evaluation-----------------------\n"
+            f"INFO: iou@{self.test_min_iou} matched proposals: "
+            f"[{total_captions - missing_proposals} / {total_captions}], "
+        )
+        
+        ### make up placeholders for undetected bounding boxes
+        for missing_key in (corpus.keys() - candidates['caption'].keys()):
+            candidates['caption'][missing_key] = ["sos eos"]
+        
+        # find annotated objects in scanrefer
+        candidates = OrderedDict([
+            (key, value) for key, value in sorted(candidates['caption'].items()) \
+                if not key.endswith("unknown")
+        ])
+        score_per_caption, message, eval_metric = score_captions(
+            OrderedDict([(key, corpus[key]) for key in candidates]), candidates
+        )
+        
+        self.trainer.logger.info(message)
+        
+        with open(os.path.join(self.checkpoint_dir, "corpus_val.json"), "w") as f: 
+            json.dump(corpus, f, indent=4)
+        
+        with open(os.path.join(self.checkpoint_dir, "pred_val.json"), "w") as f:
+            json.dump(candidates, f, indent=4)
+        
+        with open(os.path.join(self.checkpoint_dir, "pred_gt_val.json"), "w") as f:
+            pred_gt_val = {}
+            for scene_object_id, scene_object_id_key in enumerate(candidates):
+                pred_gt_val[scene_object_id_key] = {
+                    'pred': candidates[scene_object_id_key],
+                    'gt': corpus[scene_object_id_key],
+                    'score': {
+                        'bleu-1': score_per_caption['bleu-1'][scene_object_id],
+                        'bleu-2': score_per_caption['bleu-2'][scene_object_id],
+                        'bleu-3': score_per_caption['bleu-3'][scene_object_id],
+                        'bleu-4': score_per_caption['bleu-4'][scene_object_id],
+                        'CiDEr': score_per_caption['cider'][scene_object_id],
+                        'rouge': score_per_caption['rouge'][scene_object_id],
+                        'meteor': score_per_caption['meteor'][scene_object_id]
+                    }
+                }
+            json.dump(pred_gt_val, f, indent=4)
+        
+        eval_metrics = {
+            metric + f'@{self.test_min_iou}': score \
+                for metric, score in eval_metric.items()
+        }
+
+        self.trainer.comm_info["current_metric_value"] = eval_metrics[self.criterion]  # save for saver
+        self.trainer.comm_info["current_metric_name"] = "CiDEr@0.5"  # save for saver
+
         self.trainer.logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
 
     def _accumulate_stats(self, stat_dict, end_points):
@@ -952,6 +1077,173 @@ def eval_det_cls_wrapper(arguments):
     pred, gt, ovthresh, use_07_metric, get_iou_func = arguments
     rec, prec, ap = eval_det_cls(pred, gt, ovthresh, use_07_metric, get_iou_func)
     return (rec, prec, ap)
+
+def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=False):
+        """ Parse predictions to OBB parameters and suppress overlapping boxes
+
+        Args:
+            end_points: dict
+                {point_clouds, center, heading_scores, heading_residuals,
+                size_scores, size_residuals, sem_cls_scores}
+            config_dict: dict
+                {dataset_config, remove_empty_box, use_3d_nms, nms_iou,
+                use_old_type_nms, conf_thresh, per_class_proposal}
+        Returns:
+            batch_pred_map_cls: a list of len == batch size (BS)
+                [pred_list_i], i = 0, 1, ..., BS-1
+                where pred_list_i = [(pred_sem_cls, box_params, box_score)_j]
+                where j = 0, ..., num of valid detections - 1 from sample input i
+        """
+        pred_center = end_points[f'{prefix}center']  # (B,num_proposal=256,3)
+        # pred_heading_class = torch.argmax(end_points[f'{prefix}heading_scores'], -1)  # B,num_proposal
+        # pred_heading_residual = torch.gather(end_points[f'{prefix}heading_residuals'], 2,
+        #                                      pred_heading_class.unsqueeze(-1))  # B,num_proposal,1
+        # pred_heading_residual.squeeze_(2)
+
+        if size_cls_agnostic:
+            pred_size = end_points[f'{prefix}pred_size']  # (B, num_proposal, 3)
+        else:
+            pred_size_class = torch.argmax(end_points[f'{prefix}size_scores'], -1)  # B,num_proposal
+            pred_size_residual = torch.gather(end_points[f'{prefix}size_residuals'], 2,
+                                            pred_size_class.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1,
+                                                                                                3))  # B,num_proposal,1,3
+            pred_size_residual.squeeze_(2)
+        pred_sem_cls = torch.argmax(end_points[f'{prefix}sem_cls_scores'][..., :-1], -1)  # B,num_proposal
+        sem_cls_probs = self.softmax(end_points[f'{prefix}sem_cls_scores'].detach().cpu().numpy())  # softmax, B,num_proposal,19
+
+        num_proposal = pred_center.shape[1]     # 256
+        # Since we operate in upright_depth coord for points, while util functions
+        # assume upright_camera coord.
+        # pred_size_check = end_points[f'{prefix}pred_size']  # B,num_proposal,3
+        # pred_bbox_check = end_points[f'{prefix}bbox_check']  # B,num_proposal,3
+
+        bsize = pred_center.shape[0]
+        pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
+        pred_center_upright_camera = self.flip_axis_to_camera(pred_center.detach().cpu().numpy())
+        for i in range(bsize):
+            for j in range(num_proposal):
+                heading_angle = 0  #config_dict['dataset_config'].class2angle( \
+                #     pred_heading_class[i, j].detach().cpu().numpy(), pred_heading_residual[i, j].detach().cpu().numpy())
+                if size_cls_agnostic:
+                    box_size = pred_size[i, j].detach().cpu().numpy()
+                else:
+                    box_size = config_dict['dataset_config'].class2size( \
+                        int(pred_size_class[i, j].detach().cpu().numpy()), pred_size_residual[i, j].detach().cpu().numpy())
+                
+                corners_3d_upright_camera = self.get_3d_box(box_size, heading_angle, pred_center_upright_camera[i, j, :])
+                pred_corners_3d_upright_camera[i, j] = corners_3d_upright_camera
+
+        K = pred_center.shape[1]  # K==num_proposal
+        nonempty_box_mask = np.ones((bsize, K))
+
+        if config_dict['remove_empty_box']:
+            # -------------------------------------
+            # Remove predicted boxes without any point within them..
+            batch_pc = end_points['point_clouds'].cpu().numpy()[:, :, 0:3]  # B,N,3
+            for i in range(bsize):
+                pc = batch_pc[i, :, :]  # (N,3)
+                for j in range(K):
+                    box3d = pred_corners_3d_upright_camera[i, j, :, :]  # (8,3)
+                    box3d = self.flip_axis_to_depth(box3d)
+                    pc_in_box, inds = self.extract_pc_in_box3d(pc, box3d)
+                    if len(pc_in_box) < 5:
+                        nonempty_box_mask[i, j] = 0
+            # -------------------------------------
+        if config_dict.get('hungarian_loss', False):
+            # obj_logits = np.zeros(pred_center[:,:,None,0].shape) + 5 # (B,K,1)
+            # obj_logits[end_points[f'{prefix}indices']] = 5
+            if f'{prefix}objectness_scores' in end_points:
+                obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
+                obj_prob = self.sigmoid(obj_logits)  # (B,K)
+            else: 
+                obj_prob = (1 - sem_cls_probs[:,:,-1])
+                sem_cls_probs = sem_cls_probs[..., :-1] / obj_prob[..., None]
+        else:
+            obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
+            obj_prob = self.sigmoid(obj_logits)[:, :, 0]  # (B,256)
+        
+        if not config_dict['use_3d_nms']:
+            # ---------- NMS input: pred_with_prob in (B,K,7) -----------
+            pred_mask = np.zeros((bsize, K))
+            for i in range(bsize):
+                boxes_2d_with_prob = np.zeros((K, 5))
+                for j in range(K):
+                    boxes_2d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
+                    boxes_2d_with_prob[j, 2] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
+                    boxes_2d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
+                    boxes_2d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
+                    boxes_2d_with_prob[j, 4] = obj_prob[i, j]
+                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
+                pick = nms_2d_faster(boxes_2d_with_prob[nonempty_box_mask[i, :] == 1, :],
+                                    config_dict['nms_iou'], config_dict['use_old_type_nms'])
+                assert (len(pick) > 0)
+                pred_mask[i, nonempty_box_inds[pick]] = 1
+            # ---------- NMS output: pred_mask in (B,K) -----------
+        elif config_dict['use_3d_nms'] and (not config_dict['cls_nms']):
+            # ---------- NMS input: pred_with_prob in (B,K,7) -----------
+            pred_mask = np.zeros((bsize, K))
+            for i in range(bsize):
+                boxes_3d_with_prob = np.zeros((K, 7))
+                for j in range(K):
+                    boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
+                    boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
+                    boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
+                    boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
+                    boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
+                    boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
+                    boxes_3d_with_prob[j, 6] = obj_prob[i, j]
+                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
+                pick = self.nms_3d_faster(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
+                                    config_dict['nms_iou'], config_dict['use_old_type_nms'])
+                assert (len(pick) > 0)
+                pred_mask[i, nonempty_box_inds[pick]] = 1
+            # ---------- NMS output: pred_mask in (B,K) -----------
+        # 3D NMS
+        elif config_dict['use_3d_nms'] and config_dict['cls_nms']:
+            # ---------- NMS input: pred_with_prob in (B,K,8) -----------
+            pred_mask = np.zeros((bsize, K))
+            for i in range(bsize):
+                boxes_3d_with_prob = np.zeros((K, 8))
+                for j in range(K):
+                    boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
+                    boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
+                    boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
+                    boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
+                    boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
+                    boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
+                    boxes_3d_with_prob[j, 6] = obj_prob[i, j]
+                    boxes_3d_with_prob[j, 7] = pred_sem_cls[i, j]  # only suppress if the two boxes are of the same class!!
+                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
+                pick = self.nms_3d_faster_samecls(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
+                                            config_dict['nms_iou'], config_dict['use_old_type_nms'])
+                # assert (len(pick) > 0)
+                if len(pick) > 0:
+                    pred_mask[i, nonempty_box_inds[pick]] = 1
+            end_points[f'{prefix}pred_mask'] = pred_mask
+            # ---------- NMS output: pred_mask in (B,K) -----------
+
+        batch_pred_map_cls = []  # a list (len: batch_size) of list (len: num of predictions per sample) of tuples of pred_cls, pred_box and conf (0-1)
+        for i in range(bsize):
+            if config_dict['per_class_proposal']:
+                cur_list = []
+                for ii in range(config_dict['dataset_config'].num_class):
+                    # if config_dict.get('hungarian_loss', False) and ii == config_dict['dataset_config'].num_class - 1:
+                    #    continue
+                    try:
+                        cur_list += [
+                            (ii, pred_corners_3d_upright_camera[i, j], sem_cls_probs[i, j, ii] * obj_prob[i, j])
+                            for j in range(pred_center.shape[1])
+                            if pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']
+                        ]
+                    except:
+                        st()
+                batch_pred_map_cls.append(cur_list)
+            else:
+                batch_pred_map_cls.append([(pred_sem_cls[i, j].item(), pred_corners_3d_upright_camera[i, j], obj_prob[i, j]) \
+                                        for j in range(pred_center.shape[1]) if
+                                        pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']])
+
+        return batch_pred_map_cls
 
 class ScannetDatasetConfig:
 
@@ -1298,7 +1590,7 @@ class DetEvaluator(HookBase):
             # for prefix in prefixes:
             prefix = 'last_'
             # pred
-            batch_pred_map_cls = self.parse_predictions(
+            batch_pred_map_cls = parse_predictions(
                 end_points, CONFIG_DICT, prefix,
                 size_cls_agnostic=True)
             batch_gt_map_cls = self.parse_groundtruths(
@@ -1560,173 +1852,6 @@ class DetEvaluator(HookBase):
             I = np.delete(I, np.concatenate(([last - 1], np.where(o > overlap_threshold)[0])))
 
         return pick
-
-    def parse_predictions(self, end_points, config_dict, prefix="", size_cls_agnostic=False):
-        """ Parse predictions to OBB parameters and suppress overlapping boxes
-
-        Args:
-            end_points: dict
-                {point_clouds, center, heading_scores, heading_residuals,
-                size_scores, size_residuals, sem_cls_scores}
-            config_dict: dict
-                {dataset_config, remove_empty_box, use_3d_nms, nms_iou,
-                use_old_type_nms, conf_thresh, per_class_proposal}
-        Returns:
-            batch_pred_map_cls: a list of len == batch size (BS)
-                [pred_list_i], i = 0, 1, ..., BS-1
-                where pred_list_i = [(pred_sem_cls, box_params, box_score)_j]
-                where j = 0, ..., num of valid detections - 1 from sample input i
-        """
-        pred_center = end_points[f'{prefix}center']  # (B,num_proposal=256,3)
-        # pred_heading_class = torch.argmax(end_points[f'{prefix}heading_scores'], -1)  # B,num_proposal
-        # pred_heading_residual = torch.gather(end_points[f'{prefix}heading_residuals'], 2,
-        #                                      pred_heading_class.unsqueeze(-1))  # B,num_proposal,1
-        # pred_heading_residual.squeeze_(2)
-
-        if size_cls_agnostic:
-            pred_size = end_points[f'{prefix}pred_size']  # (B, num_proposal, 3)
-        else:
-            pred_size_class = torch.argmax(end_points[f'{prefix}size_scores'], -1)  # B,num_proposal
-            pred_size_residual = torch.gather(end_points[f'{prefix}size_residuals'], 2,
-                                            pred_size_class.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1,
-                                                                                                3))  # B,num_proposal,1,3
-            pred_size_residual.squeeze_(2)
-        pred_sem_cls = torch.argmax(end_points[f'{prefix}sem_cls_scores'][..., :-1], -1)  # B,num_proposal
-        sem_cls_probs = self.softmax(end_points[f'{prefix}sem_cls_scores'].detach().cpu().numpy())  # softmax, B,num_proposal,19
-
-        num_proposal = pred_center.shape[1]     # 256
-        # Since we operate in upright_depth coord for points, while util functions
-        # assume upright_camera coord.
-        # pred_size_check = end_points[f'{prefix}pred_size']  # B,num_proposal,3
-        # pred_bbox_check = end_points[f'{prefix}bbox_check']  # B,num_proposal,3
-
-        bsize = pred_center.shape[0]
-        pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
-        pred_center_upright_camera = self.flip_axis_to_camera(pred_center.detach().cpu().numpy())
-        for i in range(bsize):
-            for j in range(num_proposal):
-                heading_angle = 0  #config_dict['dataset_config'].class2angle( \
-                #     pred_heading_class[i, j].detach().cpu().numpy(), pred_heading_residual[i, j].detach().cpu().numpy())
-                if size_cls_agnostic:
-                    box_size = pred_size[i, j].detach().cpu().numpy()
-                else:
-                    box_size = config_dict['dataset_config'].class2size( \
-                        int(pred_size_class[i, j].detach().cpu().numpy()), pred_size_residual[i, j].detach().cpu().numpy())
-                
-                corners_3d_upright_camera = self.get_3d_box(box_size, heading_angle, pred_center_upright_camera[i, j, :])
-                pred_corners_3d_upright_camera[i, j] = corners_3d_upright_camera
-
-        K = pred_center.shape[1]  # K==num_proposal
-        nonempty_box_mask = np.ones((bsize, K))
-
-        if config_dict['remove_empty_box']:
-            # -------------------------------------
-            # Remove predicted boxes without any point within them..
-            batch_pc = end_points['point_clouds'].cpu().numpy()[:, :, 0:3]  # B,N,3
-            for i in range(bsize):
-                pc = batch_pc[i, :, :]  # (N,3)
-                for j in range(K):
-                    box3d = pred_corners_3d_upright_camera[i, j, :, :]  # (8,3)
-                    box3d = self.flip_axis_to_depth(box3d)
-                    pc_in_box, inds = self.extract_pc_in_box3d(pc, box3d)
-                    if len(pc_in_box) < 5:
-                        nonempty_box_mask[i, j] = 0
-            # -------------------------------------
-        if config_dict.get('hungarian_loss', False):
-            # obj_logits = np.zeros(pred_center[:,:,None,0].shape) + 5 # (B,K,1)
-            # obj_logits[end_points[f'{prefix}indices']] = 5
-            if f'{prefix}objectness_scores' in end_points:
-                obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
-                obj_prob = self.sigmoid(obj_logits)  # (B,K)
-            else: 
-                obj_prob = (1 - sem_cls_probs[:,:,-1])
-                sem_cls_probs = sem_cls_probs[..., :-1] / obj_prob[..., None]
-        else:
-            obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
-            obj_prob = self.sigmoid(obj_logits)[:, :, 0]  # (B,256)
-        
-        if not config_dict['use_3d_nms']:
-            # ---------- NMS input: pred_with_prob in (B,K,7) -----------
-            pred_mask = np.zeros((bsize, K))
-            for i in range(bsize):
-                boxes_2d_with_prob = np.zeros((K, 5))
-                for j in range(K):
-                    boxes_2d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_2d_with_prob[j, 2] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_2d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_2d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_2d_with_prob[j, 4] = obj_prob[i, j]
-                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
-                pick = nms_2d_faster(boxes_2d_with_prob[nonempty_box_mask[i, :] == 1, :],
-                                    config_dict['nms_iou'], config_dict['use_old_type_nms'])
-                assert (len(pick) > 0)
-                pred_mask[i, nonempty_box_inds[pick]] = 1
-            # ---------- NMS output: pred_mask in (B,K) -----------
-        elif config_dict['use_3d_nms'] and (not config_dict['cls_nms']):
-            # ---------- NMS input: pred_with_prob in (B,K,7) -----------
-            pred_mask = np.zeros((bsize, K))
-            for i in range(bsize):
-                boxes_3d_with_prob = np.zeros((K, 7))
-                for j in range(K):
-                    boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 6] = obj_prob[i, j]
-                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
-                pick = self.nms_3d_faster(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
-                                    config_dict['nms_iou'], config_dict['use_old_type_nms'])
-                assert (len(pick) > 0)
-                pred_mask[i, nonempty_box_inds[pick]] = 1
-            # ---------- NMS output: pred_mask in (B,K) -----------
-        # 3D NMS
-        elif config_dict['use_3d_nms'] and config_dict['cls_nms']:
-            # ---------- NMS input: pred_with_prob in (B,K,8) -----------
-            pred_mask = np.zeros((bsize, K))
-            for i in range(bsize):
-                boxes_3d_with_prob = np.zeros((K, 8))
-                for j in range(K):
-                    boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 6] = obj_prob[i, j]
-                    boxes_3d_with_prob[j, 7] = pred_sem_cls[i, j]  # only suppress if the two boxes are of the same class!!
-                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
-                pick = self.nms_3d_faster_samecls(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
-                                            config_dict['nms_iou'], config_dict['use_old_type_nms'])
-                # assert (len(pick) > 0)
-                if len(pick) > 0:
-                    pred_mask[i, nonempty_box_inds[pick]] = 1
-            end_points[f'{prefix}pred_mask'] = pred_mask
-            # ---------- NMS output: pred_mask in (B,K) -----------
-
-        batch_pred_map_cls = []  # a list (len: batch_size) of list (len: num of predictions per sample) of tuples of pred_cls, pred_box and conf (0-1)
-        for i in range(bsize):
-            if config_dict['per_class_proposal']:
-                cur_list = []
-                for ii in range(config_dict['dataset_config'].num_class):
-                    # if config_dict.get('hungarian_loss', False) and ii == config_dict['dataset_config'].num_class - 1:
-                    #    continue
-                    try:
-                        cur_list += [
-                            (ii, pred_corners_3d_upright_camera[i, j], sem_cls_probs[i, j, ii] * obj_prob[i, j])
-                            for j in range(pred_center.shape[1])
-                            if pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']
-                        ]
-                    except:
-                        st()
-                batch_pred_map_cls.append(cur_list)
-            else:
-                batch_pred_map_cls.append([(pred_sem_cls[i, j].item(), pred_corners_3d_upright_camera[i, j], obj_prob[i, j]) \
-                                        for j in range(pred_center.shape[1]) if
-                                        pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']])
-
-        return batch_pred_map_cls
 
     def parse_groundtruths(self, end_points, config_dict, size_cls_agnostic):
         """

@@ -158,11 +158,12 @@ class Joint3DDataset_Pretrain(Dataset):
                         pickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name, self.s3ds)
                         self.s3ds.clear()
             else:
-                self.s3ds = {}
+                self.s3ds = []
                 for cnt in range(1, 11):
                     pkl_name = 'train_s3ds_' + str(cnt) + '.pkl'
-                    self.s3ds.update(unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name))
-                self.s3ds = list(self.s3ds)[0]
+                    tmp_list = unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name)
+                    tmp_list = list(tmp_list)[0]
+                    self.s3ds.extend(tmp_list)
         else:
             if not os.path.exists('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name):
                 for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):

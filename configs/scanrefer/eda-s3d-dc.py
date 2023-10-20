@@ -4,10 +4,10 @@ batch_size = 6 # bs: total bs in all gpus  108
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
-num_worker = 4
+num_worker = 1
 batch_size_val = 6
 batch_size_test = 6
-eval_freq = 3
+eval_freq = 100
 weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
 
 # model settings

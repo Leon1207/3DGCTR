@@ -334,10 +334,14 @@ class EDA_dc(nn.Module):
             cls_logits = self.semcls_head(query_last.transpose(1, 2)).transpose(1, 2)
             cls_prob = torch.nn.functional.softmax(cls_logits, dim=-1)
             end_points['objectness_prob'] = 1 - cls_prob[..., -1]
-            outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
-                  self.captioner(end_points, data_dict)
-            end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
-            end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
+            if self.training:
+                outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
+                    self.captioner(end_points, data_dict, is_eval=False)
+                end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
+                end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
+            else:
+                lang_cap = self.captioner(end_points, data_dict, is_eval=True)
+                end_points['lang_cap'] = lang_cap
 
         return end_points
 

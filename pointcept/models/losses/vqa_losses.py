@@ -546,9 +546,7 @@ class SetCriterion(nn.Module):
         if 'pred_captions' in outputs:
             o = outputs["pred_captions"]
             t = targets[0]["captions"]  # targets only use once, means they are the same in one batch
-            loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config)  
-            loss_per_word = loss_per_word.detach().cpu().numpy().reshape(t.shape)  # avoid some bugs
-            loss_per_word = torch.from_numpy(loss_per_word).to(o.device)
+            loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config).reshape(t.shape)
             cap_loss = torch.sum(loss_per_word * (t != 0).float()) / torch.sum(
                 torch.sum(t != 0).float() + 1e-6
             )
@@ -862,7 +860,7 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             + weight * loss_sem_align
         ) + 10 * loss_mask + 2 * loss_dice + 5 * loss_caption
     )
-    print(loss_caption)  # debug
+    print("caption loss: ", loss_caption.item())
     end_points['loss_ce'] = loss_ce
     end_points['loss_bbox'] = loss_bbox
     end_points['loss_giou'] = loss_giou

@@ -10,7 +10,7 @@ from transformers import GPT2Config, GPT2LMHeadModel
 from pointcept.models.threedreftr.captioner_dcc.helper import Matcher
 from pointcept.models.threedreftr.captioner_dcc.generation_utils import generation
 from pointcept.models.threedreftr.captioner_dcc.scst import SCST_Training
-from pointcept.datasets.scanrefer_dc import SCANREFER, ScanReferTokenizer
+from pointcept.datasets.scanrefer_jointdc import SCANREFER, ScanReferTokenizer
 from pointcept.models.losses.vqa_losses import generalized_box_iou3d, box_cxcyczwhd_to_xyzxyz
 
 
@@ -206,15 +206,18 @@ class Captioner(nn.Module):
         return end_points
         
     
-    def forward(self, end_points: dict, data_dict: dict) -> dict:
+    def forward(self, end_points: dict, data_dict: dict, is_eval: bool=False) -> dict:
              
         # nlayers x batch x nprop x channel -> batch x nprop x 1 x channel
         end_points = self.prepare_object_representations(end_points)
         
-        if self.use_scst is True:
-            return self.forward_scst(end_points, data_dict)
+        if is_eval ==  False:
+            if self.use_scst is True:
+                return self.forward_scst(end_points, data_dict)
+            return self.forward_training(end_points, data_dict)
+        else:
+            return self.forward_evaluation(end_points, data_dict)
         
-        return self.forward_training(end_points, data_dict)
 
     
     def forward_training(self, end_points: Dict, data_dict: Dict) -> Dict:
@@ -251,9 +254,12 @@ class Captioner(nn.Module):
             torch.ones_like(prefix_tokens[..., 0]), gt_box_cap_masks
         ], dim=2)   # batch x nproposals x (nprefix + max_des_len)W
 
+        inputs_embeds = inputs_embeds[annotated_proposal == 1]
+        inputs_masks = inputs_masks[annotated_proposal == 1]
+
         outputs = self.transformer( # num_annotated x (1 + max_des_len)
-            inputs_embeds=inputs_embeds[annotated_proposal == 1],
-            attention_mask=inputs_masks[annotated_proposal == 1],
+            inputs_embeds=inputs_embeds,
+            attention_mask=inputs_masks,
             encoder_hidden_states=\
                 None if end_points.get('encoder_hidden_states', None) is None else \
                     end_points['encoder_hidden_states'][annotated_proposal == 1]
@@ -322,3 +328,47 @@ class Captioner(nn.Module):
         
         return detector_output
     
+    
+    def forward_evaluation(self, detector_output: Dict, inputs: Dict) -> Dict:
+        
+        # proposal_tokens: batch x nprop x nprefix x channel
+        prefix_tokens = detector_output['object_features']
+        
+        batch, nproposals, nprefix, channel = prefix_tokens.shape # torch.Size([8, 256, 1, 256])
+        
+        caption_output = OrderedDict()
+        
+        # import pdb; pdb.set_trace()
+        for batch_id in range(batch):
+            scene_cap_output = generation(
+                self.transformer, 
+                inputs_embeds=prefix_tokens[batch_id],
+                encoder_hidden_states=\
+                    None if detector_output.get('encoder_hidden_states', None) is None else \
+                        detector_output['encoder_hidden_states'][batch_id],
+                **self.caption_config
+            )
+            # update scene output to batch output
+            for key, tensor in scene_cap_output.items():
+                caption_output[key] = caption_output.get(key, []) + [tensor]
+        
+        for key, tensor in caption_output.items():
+            caption_output[key] = torch.cat(caption_output[key], dim=0)
+        
+        
+        # import pdb; pdb.set_trace()
+        captions = self.tokenizer.batch_decode( # list of strings
+            caption_output['output_ids'].tolist(),#torch.Size([2048, 32]), batch merge npropasals so get 2048
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False
+        )
+        
+        lang_cap = [
+            [
+                'sos ' + captions[batch_id * nproposals + prop_id] + ' eos' \
+                    for prop_id in range(nproposals)
+            ] \
+            for batch_id in range(batch)
+        ]
+        
+        return lang_cap

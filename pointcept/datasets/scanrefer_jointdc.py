@@ -128,17 +128,17 @@ class ScanReferTokenizer:
         return [self.decode(tokens) for tokens in list_tokens]
 
 
-@DATASETS.register_module()
+# @DATASETS.register_module()
 class Joint3DDataset_JointDC(Dataset):
     """Dataset utilities for ReferIt3D."""
 
     def __init__(self, 
                  split='train',
-                 data_root='./',
+                 data_root='/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed',
                  transform=None,
                 #  dataset_dict={'scanrefer': 1, 'scannet': 10},  # training on rec
-                 dataset_dict={'scanrefer': 1},  # training on captions
-                 test_dataset='scanrefer',
+                 dataset_dict={'scannet': 1},  # training on captions
+                 test_dataset='scannet',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
@@ -214,8 +214,15 @@ class Joint3DDataset_JointDC(Dataset):
         # step 3. generate or load train/val_v3scans.pkl
         if not os.path.exists(f'{self.data_path}/{split}_v3scans.pkl'):
             save_data(f'{data_root}/{split}_v3scans.pkl', split, "/userhome/backup_lhj/dataset/pointcloud/scannet_all/scannet-sparse/raw/")
-        self.scans = unpickle_data(f'{self.data_path}/{split}_v3scans.pkl')
-        self.scans = list(self.scans)[0]
+        tmp_list = unpickle_data(f'{self.data_path}/{split}_v3scans.pkl')
+        tmp_list = list(tmp_list)[0]
+        self.scans = {}
+        # filter scene which not used in scanrefer dense caption
+        filter_scene = ["scene0154_00"]  # no object scene
+        for key in self.gathered_language.keys():
+            if key not in filter_scene:
+                self.scans[key] = tmp_list[key]  
+        del tmp_list
         
         # step 5. load text dataset
         if self.split != 'train':
@@ -358,7 +365,7 @@ class Joint3DDataset_JointDC(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader[:100]  # debug
+            for anno in reader
             if anno['scene_id'] in scan_ids
         ]
 
@@ -971,24 +978,25 @@ class Joint3DDataset_JointDC(Dataset):
         language_dataset = self.test_dataset
 
         # step Read annotation and point clouds
-        anno = self.annos[index]
+        anno = self.annos[index] #len(self.annos) 561
         scan = self.scans[anno['scan_id']]
         scan.pc = np.copy(scan.orig_pc)
         superpoint = torch.zeros((1))  # avoid bugs
 
         # step constract anno (used only for [scannet])
         self.random_utt = False
-        self.random_utt = self.joint_det and np.random.random() > 0.5
         sampled_classes = self._sample_classes(anno['scan_id'])
         utterance = self._create_scannet_utterance(sampled_classes)
         
+        if anno['scan_id'] == 'scene0364_00':
+            import pdb; pdb.set_trace()
         if not self.random_utt:  # detection18 phrase
             anno['target_id'] = np.where(np.array([
                 self.label_map18[
                     scan.get_object_instance_label(ind)
                 ] in DC18.nyu40id2class
-                for ind in range(len(scan.three_d_objects))
-            ])[:MAX_NUM_OBJ])[0].tolist()  # target_id是相对于整个scene拥有的object的index
+                for ind in range(len(scan.three_d_objects)) # scene0364_00 len(scan.three_d_objects) 17
+            ])[:MAX_NUM_OBJ])[0].tolist() 
         else:
             anno['target_id'] = np.where(np.array([
                 self.label_map[
@@ -997,7 +1005,7 @@ class Joint3DDataset_JointDC(Dataset):
                 and
                 DC.class2type[DC.nyu40id2class[self.label_map[
                     scan.get_object_instance_label(ind)
-                ]]] in sampled_classes
+                ]]] in sampled_classes  # use 18 classes to filter target_id
                 for ind in range(len(scan.three_d_objects))
             ])[:MAX_NUM_OBJ])[0].tolist()
         
@@ -1036,8 +1044,7 @@ class Joint3DDataset_JointDC(Dataset):
         ) = self._get_scene_objects(scan)
 
         # not used
-        # auxi_box = self._get_auxi_boxes(anno, class_ids, all_bboxes, all_bbox_label_mask, gt_bboxes)
-        auxi_box = None
+        auxi_box = self._get_auxi_boxes(anno, class_ids, all_bboxes, all_bbox_label_mask, gt_bboxes)
 
         ##########################
         # STEP Get text position #
@@ -1157,20 +1164,21 @@ class Joint3DDataset_JointDC(Dataset):
             "source_xzy": point_cloud[..., 0:3].astype(np.float32)
         })
 
+        # if anno['scan_id'] == "scene0364_00":
+        #     lst = []
+        #     for ind in anno['target']:
+        #         lst.append(ind)
+        #     print(lst)  # debug
+
         # preprocess tokenizer for dense caption (not in pretrain stage)
         reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))  # [132, 32]
         reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
 
-        # scannet will use *_01 scene, there, how to split DC and RES data into differet batch?
-        if self.split == 'train' and anno['dataset'] == 'scanrefer':
+        if self.split == 'train':
             scene_caption = []
             scan_name = anno['scan_id']
-            dc_scannet_path = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/scannet/scannet_data'  # modify
-            instance_bboxes = np.load(
-                os.path.join(dc_scannet_path, scan_name) + "_aligned_bbox.npy"
-            )
             if scan_name in self.gathered_language:
-                for instance_id in instance_bboxes[:, -1]:
+                for instance_id in anno['target_id']:
                     if instance_id not in self.gathered_language[scan_name]:
                         caption = ''
                     else:
@@ -1187,11 +1195,12 @@ class Joint3DDataset_JointDC(Dataset):
                 return_tensors='np'
             )
             tokenizer_output['input_ids'] *= tokenizer_output['attention_mask']
-            reference_tokens[:len(instance_bboxes[:, -1])] = tokenizer_output['input_ids']
-            reference_masks[:len(instance_bboxes[:, -1])]  = tokenizer_output['attention_mask']
+            reference_tokens[:len(anno['target_id'])] = tokenizer_output['input_ids']
+            reference_masks[:len(anno['target_id'])]  = tokenizer_output['attention_mask']
             
         ret_dict['reference_tokens'] = reference_tokens.astype(np.int64)
         ret_dict['reference_masks'] = reference_masks.astype(np.float32)
+        ret_dict["scan_idx"] = np.array(index).astype(np.int64)
 
         return ret_dict
 
@@ -1486,3 +1495,12 @@ def Scene_graph_parse(annos):
         anno["auxi_entity"] = auxi_entity
     
     print('End text decoupling!')
+
+
+if __name__ == '__main__':
+    dataset = Joint3DDataset_JointDC()
+    i = 0
+    while True:
+        print(i)
+        dataset.__getitem__(i)
+        i += 1
