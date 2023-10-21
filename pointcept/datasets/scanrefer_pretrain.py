@@ -135,328 +135,57 @@ class Joint3DDataset_Pretrain(Dataset):
         print('Loading %s files, take a breath!' % split)
         
         # step 3. generate or load train/val_v3scans.pkl
-        if not os.path.exists(f'{self.data_path}/{split}_v3scans.pkl'):
-            save_data(f'{data_root}/{split}_v3scans.pkl', split, "/userhome/backup_lhj/dataset/pointcloud/scannet_all/scannet-sparse/raw/")
-        self.scans = unpickle_data(f'{self.data_path}/{split}_v3scans.pkl')
-        self.scans = list(self.scans)[0]
+        self.scans = {}
 
         # step 4. load datasets for structured3D
         self.s3ds = {}
-        s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}'
-        pkl_name = f'{split}_s3ds.pkl'
-        total = 3000 if split == 'train' else 250
-        if split == 'train':
-            if not os.path.exists('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name):
-                for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
-                    print("Process S3D scene: {}, total: {}/{}".format(dirpath.split('/')[-1], cnt, total))
-                    for filename in filenames:
-                        scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
-                        self.s3ds[scene_id] = S3D(scene_id, s3d_data_path)
-                    if cnt % 300 == 0:
-                        print("Saving...")
-                        pkl_name = 'train_s3ds_' + str(int(cnt / 300)) + '.pkl'
-                        pickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name, self.s3ds)
-                        self.s3ds.clear()
-            else:
-                self.s3ds = []
-                for cnt in range(1, 11):
-                    pkl_name = 'train_s3ds_' + str(cnt) + '.pkl'
-                    tmp_list = unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name)
-                    tmp_list = list(tmp_list)[0]
-                    self.s3ds.extend(tmp_list)
-        else:
-            if not os.path.exists('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name):
-                for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
-                    print("Process S3D scene: {}, total: {}/{}".format(dirpath.split('/')[-1], cnt, total))
-                    for filename in filenames:
-                        scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
-                        self.s3ds[scene_id] = S3D(scene_id, s3d_data_path)
-                    pickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name, self.s3ds)
-            else:
-                self.s3ds = unpickle_data('/userhome/lyd/Pointcept/data/structured3d/Only_panorama/' + pkl_name)
-                self.s3ds = list(self.s3ds)[0]
-        
-        # step 5. load text dataset
-        if self.split != 'train':
-            self.annos = self.load_annos(test_dataset)
-        else:
-            self.annos = []
-            for dset, cnt in dataset_dict.items():  
-                if cnt > 0:
-                    _annos = self.load_annos(dset)
-                    self.annos += (_annos * cnt)
+        self.annos = []
 
-    # BRIEF load text data
-    def load_annos(self, dset):
-        """Load annotations of given dataset."""
-        loaders = {
-            'nr3d': self.load_nr3d_annos,
-            'sr3d': self.load_sr3d_annos,
-            'sr3d+': self.load_sr3dplus_annos,
-            'scanrefer': self.load_scanrefer_annos, # scanrefer
-            'scannet': self.load_scannet_annos,      # scannet detection augmentation
-            'structured3d': self.load_structured3d_annos,  # s3d
-        }
-        annos = loaders[dset]()
-        if self.overfit:
-            annos = annos[:128]
-        return annos
+        # using for processing datasets
+        # s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}'
+        # total = 3000 if split == 'train' else 250
+        # for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
+        #     print("Process: {}/{}".format(cnt, total))
+        #     for filename in filenames:
+        #         scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
+        #         self.s3ds[scene_id] = ""
+        #         scan = S3D(scene_id, s3d_data_path)
+        #         keep = np.array([
+        #             self.label_map[
+        #                 scan.get_object_instance_label(ind)
+        #             ] in DC.nyu40id2class
+        #             for ind in range(len(scan.three_d_objects))
+        #         ])
+        #         if keep.any():
+        #             self.annos.append({
+        #                 'scan_id': scene_id,
+        #                 'target_id': [],
+        #                 'distractor_ids': [],
+        #                 'utterance': '',
+        #                 'target': [],
+        #                 'anchors': [],
+        #                 'anchor_ids': [],
+        #                 'dataset': 'structured3d'
+        #             })
+        #             pkl_name = scene_id + ".pkl"
+        #             save_dict = {scene_id: scan}
+        #             pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + pkl_name, save_dict)
 
-    def load_sr3dplus_annos(self):
-        """Load annotations of sr3d/sr3d+."""
-        return self.load_sr3d_annos(dset='sr3d+')
-
-    def load_sr3d_annos(self, dset='sr3d'):
-        """Load annotations of sr3d/sr3d+."""
-        split = self.split
-        if split == 'val':
-            split = 'test'
-        with open('pointcept/datasets/preprocessing/scanrefer/meta_data/sr3d_%s_scans.txt' % split) as f:
-            scan_ids = set(eval(f.read()))
-        with open(self.data_path + '/ReferIt3D/%s.csv' % dset) as f:
-            csv_reader = csv.reader(f)
-            headers = next(csv_reader)
-            headers = {header: h for h, header in enumerate(headers)}
-            annos = [
-                {
-                    'scan_id': line[headers['scan_id']],
-                    'target_id': int(line[headers['target_id']]),
-                    'distractor_ids': eval(line[headers['distractor_ids']]),
-                    'utterance': line[headers['utterance']],
-                    'target': line[headers['instance_type']],
-                    'anchors': eval(line[headers['anchors_types']]),
-                    'anchor_ids': eval(line[headers['anchor_ids']]),
-                    'dataset': dset
-                }
-                for line in csv_reader
-                if line[headers['scan_id']] in scan_ids
-                and
-                str(line[headers['mentions_target_class']]).lower() == 'true'
-            ]
-
-            # text decoupling
-            Scene_graph_parse(annos)
-
-        return annos
-
-    def load_nr3d_annos(self):
-        """Load annotations of nr3d."""
-        split = self.split
-        if split == 'val':
-            split = 'test'
-        with open('pointcept/datasets/preprocessing/scanrefer/meta_data/nr3d_%s_scans.txt' % split) as f:
-            scan_ids = set(eval(f.read()))
-        with open(self.data_path + '/ReferIt3D/nr3d.csv') as f:
-            csv_reader = csv.reader(f)
-            headers = next(csv_reader)
-            headers = {header: h for h, header in enumerate(headers)}
-            annos = [
-                {
-                    'scan_id': line[headers['scan_id']],
-                    'target_id': int(line[headers['target_id']]),
-                    'target': line[headers['instance_type']],
-                    'utterance': line[headers['utterance']],
-                    'anchor_ids': [],
-                    'anchors': [],
-                    'dataset': 'nr3d'
-                }
-                for line in csv_reader
-                if line[headers['scan_id']] in scan_ids
-                # and
-                # str(line[headers['mentions_target_class']]).lower() == 'true' # NOTE BUTD ignores 5% of hard samples
-                and
-                (
-                    str(line[headers['correct_guess']]).lower() == 'true'
-                    or split != 'test'
-                )
-            ]
-        
-        Scene_graph_parse(annos)
-
-        # Add distractor info
-        for anno in annos:
-            anno['distractor_ids'] = [
-                ind
-                for ind in
-                range(len(self.scans[anno['scan_id']].three_d_objects))
-                if self.scans[anno['scan_id']].get_object_instance_label(ind)
-                == anno['target']
-                and ind != anno['target_id']
-            ]
-
-        # NOTE [BUTD-DETR] Filter out sentences that do not explicitly mention the target class
-        # annos = [anno for anno in annos if anno['target'] in anno['utterance']]
-
-        return annos
-
-    
-    # BRIEF load ScanRefer
-    def load_scanrefer_annos(self):
-        """Load annotations of ScanRefer."""
-        _path = self.data_path + '/ScanRefer/ScanRefer_filtered'
-        split = self.split
-        if split in ('val', 'test'):
-            split = 'val'
-        with open(_path + '_%s.txt' % split) as f:  # ScanRefer_filtered_train.txt
-            scan_ids = [line.rstrip().strip('\n') for line in f.readlines()]
-        with open(_path + '_%s.json' % split) as f:
-            reader = json.load(f)
-        if self.wo_obj_name != "None":
-            with open(self.wo_obj_name) as f:
-                reader = json.load(f)
-        
-        # STEP 1. load utterance
-        annos = [
-            {
-                'scan_id': anno['scene_id'],
-                'target_id': int(anno['object_id']),
-                # 'ann_id': int(anno['ann_id']),
+        # using after processing 
+        for scene_id in os.listdir(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/'):
+            self.annos.append({
+                'scan_id': scene_id.split(".")[0],
+                'target_id': [],
                 'distractor_ids': [],
-                'utterance': ' '.join(anno['token']),
-                'target': ' '.join(str(anno['object_name']).split('_')),
-                'anchors': [],      
-                'anchor_ids': [],   
-                'dataset': 'scanrefer'
-            }
-            for anno in reader  # debug
-            if anno['scene_id'] in scan_ids
-        ]
+                'utterance': '',
+                'target': [],
+                'anchors': [],
+                'anchor_ids': [],
+                'dataset': 'structured3d'
+            })
+            self.s3ds[scene_id.split(".")[0]] = ""
 
-        ###########################
-        # STEP 2. text decoupling #
-        ########################
-        # ###
-        Scene_graph_parse(annos)
-
-        # # NOTE BUTD-DETR unreasonable approach, add GT object name
-        # num = 0
-        # for anno in annos:
-        #     if anno['target'] not in anno['utterance']:
-        #         num+=1
-        #         anno['utterance'] = (
-        #             ' '.join(anno['utterance'].split(' . ')[0].split()[:-1])
-        #             + ' ' + anno['target'] + ' . '
-        #             + ' . '.join(anno['utterance'].split(' . ')[1:])
-        #         )
-        
-        # STEP 3. Add distractor info
-        scene2obj = defaultdict(list)
-        sceneobj2used = defaultdict(list)
-        for anno in annos:
-            nyu_labels = [
-                self.label_mapclass[
-                    self.scans[anno['scan_id']].get_object_instance_label(ind)
-                ]
-                for ind in
-                range(len(self.scans[anno['scan_id']].three_d_objects))
-            ]
-            labels = [DC18.type2class.get(lbl, 17) for lbl in nyu_labels]
-            anno['distractor_ids'] = [
-                ind
-                for ind in
-                range(len(self.scans[anno['scan_id']].three_d_objects))
-                if labels[ind] == labels[anno['target_id']]
-                and ind != anno['target_id']
-            ][:32]
-            if anno['target_id'] not in sceneobj2used[anno['scan_id']]:
-                sceneobj2used[anno['scan_id']].append(anno['target_id'])
-                scene2obj[anno['scan_id']].append(labels[anno['target_id']])
-        
-        # STEP 4. Add unique-multi
-        for anno in annos:
-            if anno['scan_id'] not in list(self.scans.keys()):
-                continue
-
-            nyu_labels = [
-                self.label_mapclass[
-                    self.scans[anno['scan_id']].get_object_instance_label(ind)
-                ]
-                for ind in
-                range(len(self.scans[anno['scan_id']].three_d_objects))
-            ]
-            labels = [DC18.type2class.get(lbl, 17) for lbl in nyu_labels]
-            anno['unique'] = (
-                np.array(scene2obj[anno['scan_id']])
-                == labels[anno['target_id']]
-            ).sum() == 1
-        return annos
-
-
-    # BRIEF scannet detection prompt.
-    def load_scannet_annos(self):
-        """Load annotations of scannet."""
-        split = 'train' if self.split == 'train' else 'val'
-        with open('pointcept/datasets/preprocessing/scanrefer/meta_data/scannetv2_%s.txt' % split) as f:
-            scan_ids = [line.rstrip() for line in f]
-
-        annos = []
-        for scan_id in scan_ids:
-            if scan_id not in list(self.scans.keys()):
-                continue
-
-            scan = self.scans[scan_id]
-            # Ignore scans that have no object in our vocabulary
-            keep = np.array([
-                self.label_map[
-                    scan.get_object_instance_label(ind)
-                ] in DC.nyu40id2class
-                for ind in range(len(scan.three_d_objects))
-            ])
-            if keep.any():
-                # this will get populated randomly each time
-                annos.append({
-                    'scan_id': scan_id,
-                    'target_id': [],
-                    'distractor_ids': [],
-                    'utterance': '',
-                    'target': [],
-                    'anchors': [],
-                    'anchor_ids': [],
-                    'dataset': 'scannet'
-                })
-        if self.split == 'train':
-            annos = [
-                anno for a, anno in enumerate(annos)
-                if a not in {965, 977}
-            ]
-        return annos
-
-    
-    def load_structured3d_annos(self):
-        """Load annotations of structured3d."""
-        split = 'train' if self.split == 'train' else 'val'
-        scene_ids = []
-
-        for scene_id in self.s3ds:
-            scene_ids.append(scene_id)   
-
-        annos = []
-        for scan_id in scene_ids:
-            if scene_id not in list(self.s3ds.keys()):
-                continue
-
-            scan = self.s3ds[scan_id]
-            # Ignore scans that have no object in our vocabulary
-            keep = np.array([
-                self.label_map[
-                    scan.get_object_instance_label(ind)
-                ] in DC.nyu40id2class
-                for ind in range(len(scan.three_d_objects))
-            ])
-            if keep.any():
-                # this will get populated randomly each time
-                annos.append({
-                    'scan_id': scan_id,
-                    'target_id': [],
-                    'distractor_ids': [],
-                    'utterance': '',
-                    'target': [],
-                    'anchors': [],
-                    'anchor_ids': [],
-                    'dataset': 'structured3d'
-                })
-
-        return annos
+        print("Done.")
     
     # BRIEF smaple classes for detection prompt
     def _sample_classes(self, scan_id):
@@ -976,10 +705,9 @@ class Joint3DDataset_Pretrain(Dataset):
 
         # step Read annotation and point clouds
         anno = self.annos[index]
-        if anno['dataset'] == 'structured3d':
-            scan = self.s3ds[anno['scan_id']]
-        else:
-            scan = self.scans[anno['scan_id']]
+        scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
+        scan = list(scan)[0][anno['scan_id']]
+        self.s3ds[anno['scan_id']] = scan
         scan.pc = np.copy(scan.orig_pc)
         superpoint = torch.zeros((1))  # avoid bugs
 

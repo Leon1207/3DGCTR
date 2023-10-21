@@ -4,10 +4,10 @@ batch_size = 8 # bs: total bs in all gpus  108
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
-num_worker = 2
+num_worker = 1
 batch_size_val = 8
 batch_size_test = 8
-eval_freq = 1
+eval_freq = 3
 
 # model settings
 model = dict(

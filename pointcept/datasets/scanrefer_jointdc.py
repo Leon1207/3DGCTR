@@ -128,7 +128,7 @@ class ScanReferTokenizer:
         return [self.decode(tokens) for tokens in list_tokens]
 
 
-# @DATASETS.register_module()
+@DATASETS.register_module()
 class Joint3DDataset_JointDC(Dataset):
     """Dataset utilities for ReferIt3D."""
 
@@ -988,8 +988,8 @@ class Joint3DDataset_JointDC(Dataset):
         sampled_classes = self._sample_classes(anno['scan_id'])
         utterance = self._create_scannet_utterance(sampled_classes)
         
-        if anno['scan_id'] == 'scene0364_00':
-            import pdb; pdb.set_trace()
+        # if anno['scan_id'] == 'scene0364_00':
+        #     import pdb; pdb.set_trace()
         if not self.random_utt:  # detection18 phrase
             anno['target_id'] = np.where(np.array([
                 self.label_map18[
@@ -1497,10 +1497,10 @@ def Scene_graph_parse(annos):
     print('End text decoupling!')
 
 
-if __name__ == '__main__':
-    dataset = Joint3DDataset_JointDC()
-    i = 0
-    while True:
-        print(i)
-        dataset.__getitem__(i)
-        i += 1
+# if __name__ == '__main__':
+#     dataset = Joint3DDataset_JointDC()
+#     i = 0
+#     while True:
+#         print(i)
+#         dataset.__getitem__(i)
+#         i += 1

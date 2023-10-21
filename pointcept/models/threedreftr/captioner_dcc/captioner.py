@@ -355,10 +355,9 @@ class Captioner(nn.Module):
         for key, tensor in caption_output.items():
             caption_output[key] = torch.cat(caption_output[key], dim=0)
         
-        
-        # import pdb; pdb.set_trace()
-        captions = self.tokenizer.batch_decode( # list of strings
-            caption_output['output_ids'].tolist(),#torch.Size([2048, 32]), batch merge npropasals so get 2048
+
+        captions = self.tokenizer.batch_decode( 
+            caption_output['output_ids'].tolist(),
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False
         )

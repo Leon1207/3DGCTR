@@ -4,10 +4,10 @@ batch_size = 6 # bs: total bs in all gpus  108
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
-num_worker = 4
-batch_size_val = 6
-batch_size_test = 6
-eval_freq = 100
+num_worker = 1
+batch_size_val = 1
+batch_size_test = 1
+eval_freq = 1
 weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
 
 # model settings
@@ -133,7 +133,7 @@ hooks = [
     dict(type="CheckpointLoader", keywords='module.', replacement=''),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
-    dict(type="DetEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
     dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False)
 ]

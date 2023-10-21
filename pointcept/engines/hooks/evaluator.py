@@ -706,20 +706,23 @@ class CaptionEvaluator(HookBase):
         for curr_iter, batch_data in enumerate(self.trainer.val_loader):
             
             inputs = self._to_gpu(batch_data)
-            end_points = self.trainer.model(inputs, is_eval=True)
+            end_points = self.trainer.model(inputs)
             
             # match objects
             _, nqueries, _ =  end_points['last_center'].shape
             gt_center = end_points['center_label'][:, :, 0:3]       
             gt_size = end_points['size_gts']                        
             gt_bboxes = torch.cat([gt_center, gt_size], dim=-1)
-            pred_center = end_points['last_center']  # B, Q=256, 3
-            pred_size = end_points['last_pred_size']  # (B,Q,3) (l,w,h)
-            pred_bbox = torch.cat([pred_center, pred_size], dim=-1)  # ([B, 256, 6])
-            match_box_ious, _ = _iou3d_par(
-                box_cxcyczwhd_to_xyzxyz(gt_bboxes),
-                box_cxcyczwhd_to_xyzxyz(pred_bbox)
-            )  # batch, nqueries, MAX_NUM_OBJ
+            pred_center = end_points['last_center']
+            pred_size = end_points['last_pred_size']
+            pred_bbox = torch.cat([pred_center, pred_size], dim=-1)
+            
+            match_box_ious = torch.stack([
+                _iou3d_par(
+                    box_cxcyczwhd_to_xyzxyz(gt_bboxes[b]),  # [B, 132, 6]
+                    box_cxcyczwhd_to_xyzxyz(pred_bbox[b])  # [B, 256, 6]
+                ) for b in range(pred_bbox.shape[0])
+            ], dim=0)  # batch, nqueries, MAX_NUM_OBJ
             
             match_box_ious, match_box_idxs = match_box_ious.max(-1) # batch, nqueries
             match_box_idxs = torch.gather(

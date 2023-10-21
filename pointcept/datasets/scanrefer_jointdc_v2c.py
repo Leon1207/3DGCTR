@@ -216,7 +216,7 @@ class DatasetConfig(object):
         return np.concatenate([new_centers, new_lengths], axis=1)
 
 
-# @DATASETS.register_module()
+@DATASETS.register_module()
 class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
 
     def __init__(self,
@@ -258,7 +258,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         if split in ["train", "val"]:
             
             self.scanrefer = SCANREFER['language'][split]
-            self.scan_names = SCANREFER['scene_list'][split]
+            self.scan_names = SCANREFER['scene_list'][split][:100]  # debug
             self.split = split
             print(f"kept {len(self.scan_names)} scans out of {len(all_scan_names)}")
             
@@ -473,8 +473,8 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
                 'others'
             ]
         captions = ' . '.join(captions)
-        if scan_name == 'scene0364_00':
-            import pdb; pdb.set_trace()
+        # if scan_name == 'scene0364_00':
+        #     import pdb; pdb.set_trace()
         targets = [self.dataset_config.class2type[
                     self.dataset_config.nyu40id2class[int(ind)]]
                         for ind in instance_bboxes[:, -2]] #scene0364_00 len(instance_bboxes) 11
@@ -530,16 +530,10 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         ret_dict["point_instance_label"] = instance_labels.astype(np.int64)
 
         # caption label
-        if self.split == 'train':
+        reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))
+        reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
 
-            # if scan_name == "scene0364_00":
-            #     lst = []
-            #     for ind in instance_bboxes[:, -1]:  # [n, 8] 6:center + size, 7:nyu40label 8:label
-            #         lst.append(ind)
-            #     print(lst)  # debug
-            
-            reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))
-            reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
+        if self.split == 'train':
             
             scene_caption = []
             if scan_name in self.gathered_language:
@@ -565,9 +559,9 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
             reference_tokens[:len(instance_bboxes[:, -1])] = tokenizer_output['input_ids']
             reference_masks[:len(instance_bboxes[:, -1])]  = tokenizer_output['attention_mask']
             
-            ret_dict['reference_tokens'] = reference_tokens.astype(np.int64)
-            ret_dict['reference_masks'] = reference_masks.astype(np.float32)
-            ret_dict["scan_idx"] = np.array(idx).astype(np.int64)
+        ret_dict['reference_tokens'] = reference_tokens.astype(np.int64)
+        ret_dict['reference_masks'] = reference_masks.astype(np.float32)
+        ret_dict["scan_idx"] = np.array(idx).astype(np.int64)
         
         return ret_dict
     
@@ -603,10 +597,10 @@ def get_positive_map(tokenized, tokens_positive):
     return positive_map.numpy()
 
 
-if __name__ == '__main__':
-    dataset = Joint3DDataset_JointDC_v2c()
-    i = 0
-    while True:
-        print(i)
-        dataset.__getitem__(i)
-        i += 1
+# if __name__ == '__main__':
+#     dataset = Joint3DDataset_JointDC_v2c()
+#     i = 0
+#     while True:
+#         print(i)
+#         dataset.__getitem__(i)
+#         i += 1
