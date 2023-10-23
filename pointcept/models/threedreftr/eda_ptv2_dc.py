@@ -146,12 +146,6 @@ class EDA_dc(nn.Module):
 
         # Caption head
         self.captioner = Captioner()
-        self.semcls_head = nn.Sequential(
-            nn.Conv1d(288, 18 + 1, 1, bias=False),  # 18 class + 1 non_object
-            nn.BatchNorm1d(18 + 1),
-            nn.ReLU(),
-            nn.Dropout(p=0.3)
-        )
 
         # Init
         self.init_bn_momentum()
@@ -330,8 +324,7 @@ class EDA_dc(nn.Module):
         end_points['reference_tokens'] = data_dict['reference_tokens']
         end_points['reference_masks'] = data_dict['reference_masks']
         end_points['query_last'] = query_last
-        cls_logits = self.semcls_head(query_last.transpose(1, 2)).transpose(1, 2)
-        cls_prob = torch.nn.functional.softmax(cls_logits, dim=-1)
+        cls_prob = F.softmax(end_points['last_sem_cls_scores'], dim=-1)
         end_points['objectness_prob'] = 1 - cls_prob[..., -1]
         if self.training:
             outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\

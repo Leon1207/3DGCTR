@@ -94,7 +94,7 @@ def parse_predictions(
     if config_dict["remove_empty_box"]:
         # -------------------------------------
         # Remove predicted boxes without any point within them..
-        batch_pc = point_cloud.cpu().numpy()[:, :, 0:3]  # B,N,3
+        batch_pc = point_cloud.reshape(bsize, -1, 6).cpu().numpy()[:, :, 0:3]  # B,N,3
         for i in range(bsize):
             pc = batch_pc[i, :, :]  # (N,3)
             for j in range(K):

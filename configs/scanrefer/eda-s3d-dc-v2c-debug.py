@@ -1,33 +1,34 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 80 # bs: total bs in all gpus  108
+batch_size = 6 # bs: total bs in all gpus  108
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-batch_size_val = 20
-batch_size_test = 20
-eval_freq = 3
+batch_size_val = 6
+batch_size_test = 6
+eval_freq = 1
 find_unused_parameters = True
+weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
 
 # model settings
 model = dict(
-    type="DefaultGrounder",
+    type="DefaultCaptioner",
     backbone=dict(
-        type="eda_ptv2_dets3d",
+        type="eda_ptv2_dc",
         butd="False"  # not used butd
     ),
-    losses=['boxes', 'labels', 'contrastive_align']
+    losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 
 # scheduler settings
-epoch = 100
-eval_epoch = 100
+epoch = 720
+eval_epoch = 720
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
-dataset_type = "Joint3DDataset_Pretrain"
-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
+dataset_type = "Joint3DDataset_JointDC_v2c"
+data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 data = dict(
     num_classes=13,
@@ -129,10 +130,10 @@ data = dict(
 )
 
 hooks = [
-    dict(type="CheckpointLoader"),
+    dict(type="CheckpointLoader", keywords='module.', replacement=''),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
-    dict(type="DetEvaluator", losses=['boxes', 'labels', 'contrastive_align']),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
     dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False)
 ]
@@ -140,6 +141,6 @@ hooks = [
 # tester
 test = dict(
     type="DetTester",
-    losses=['boxes', 'labels', 'contrastive_align']
+    losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 

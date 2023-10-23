@@ -80,9 +80,9 @@ class Joint3DDataset_Pretrain(Dataset):
         self.transform = Compose(transform)
         self.use_multiview = use_multiview
         self.data_path = data_root
-        self.butd = butd
-        self.butd_gt = butd_gt
-        self.butd_cls = butd_cls
+        self.butd = False
+        self.butd_gt = False
+        self.butd_cls = False
         self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
             'scannet' in dataset_dict
@@ -138,10 +138,9 @@ class Joint3DDataset_Pretrain(Dataset):
         self.scans = {}
 
         # step 4. load datasets for structured3D
-        self.s3ds = {}
         self.annos = []
 
-        # using for processing datasets
+        # using for processing datasets and save pkl for each scene_room
         # s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}'
         # total = 3000 if split == 'train' else 250
         # for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
@@ -171,21 +170,59 @@ class Joint3DDataset_Pretrain(Dataset):
         #             save_dict = {scene_id: scan}
         #             pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + pkl_name, save_dict)
 
-        # using after processing 
-        for scene_id in os.listdir(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/'):
-            self.annos.append({
-                'scan_id': scene_id.split(".")[0],
-                'target_id': [],
-                'distractor_ids': [],
-                'utterance': '',
-                'target': [],
-                'anchors': [],
-                'anchor_ids': [],
-                'dataset': 'structured3d'
-            })
-            self.s3ds[scene_id.split(".")[0]] = ""
+        # using for myself with 10 train set split scene lists
+        # s3d_pkl_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/'
+        # for cnt in range(1, 11):
+        #     print("Processing... ", cnt)
+        #     pkl_name = s3d_pkl_path + "train_s3ds_" + str(cnt) + ".pkl"
+        #     scans = unpickle_data(pkl_name)
+        #     scans = list(scans)[0]
+        #     for key in scans.keys():
+        #         scan = scans[key]
+        #         save_dict = {key: scan}
+        #         pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/train_scene_pkl/' + key + ".pkl", save_dict)
+        
+        # using for myself with 1 val set split scene lists
+        # s3d_pkl_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/'
+        # pkl_name = s3d_pkl_path + "val_s3ds.pkl"
+        # scans = unpickle_data(pkl_name)
+        # scans = list(scans)[0]
+        # for key in scans.keys():
+        #     scan = scans[key]
+        #     save_dict = {key: scan}
+        #     pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_scene_pkl/' + key + ".pkl", save_dict)
 
-        print("Done.")
+        # using after processing, loading each annos and filter invalid scene
+        lis_dir = os.listdir(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/')
+        for cnt, scene_id in enumerate(lis_dir):
+            if cnt % 1000 == 0:
+                print("Filter process: {}/{}".format(cnt, len(lis_dir)))
+            scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + scene_id)
+            scan = list(scan)[0][scene_id.split(".")[0]]
+
+            keep = np.where(np.array([
+                    self.label_map18[
+                        scan.get_object_instance_label(ind)
+                    ] in DC18.nyu40id2class
+                    for ind in range(len(scan.three_d_objects))
+                ])[:MAX_NUM_OBJ])[0].tolist()
+
+            if len(keep) > 0:
+                self.annos.append({
+                    'scan_id': scene_id.split(".")[0],
+                    'target_id': [],
+                    'distractor_ids': [],
+                    'utterance': '',
+                    'target': [],
+                    'anchors': [],
+                    'anchor_ids': [],
+                    'dataset': 'structured3d'
+                })
+            else:
+                print("Fliter scene: ", scene_id.split(".")[0])
+
+            # self.annos = self.annos[:100]  # debug
+            
     
     # BRIEF smaple classes for detection prompt
     def _sample_classes(self, scan_id):
@@ -211,9 +248,8 @@ class Joint3DDataset_Pretrain(Dataset):
             ]
         return ret
 
-    def _sample_classes_s3d(self, scan_id):
+    def _sample_classes_s3d(self, scan):
         """Sample classes for the scannet detection sentences."""
-        scan = self.s3ds[scan_id]
         sampled_classes = set([
             self.label_map[scan.get_object_instance_label(ind)]  # chair, bed, ...
             for ind in range(len(scan.three_d_objects))
@@ -707,7 +743,6 @@ class Joint3DDataset_Pretrain(Dataset):
         anno = self.annos[index]
         scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
         scan = list(scan)[0][anno['scan_id']]
-        self.s3ds[anno['scan_id']] = scan
         scan.pc = np.copy(scan.orig_pc)
         superpoint = torch.zeros((1))  # avoid bugs
 
@@ -715,10 +750,8 @@ class Joint3DDataset_Pretrain(Dataset):
         self.random_utt = False
         if (anno['dataset'] == 'scannet') or (anno['dataset'] == 'structured3d'):
             self.random_utt = self.joint_det and np.random.random() > 0.5
-            if anno['dataset'] == 'scannet':
-                sampled_classes = self._sample_classes(anno['scan_id'])
-            else:
-                sampled_classes = self._sample_classes_s3d(anno['scan_id'])
+
+            sampled_classes = self._sample_classes_s3d(scan)
             utterance = self._create_scannet_utterance(sampled_classes)
             
             if not self.random_utt:  # detection18 phrase
@@ -941,6 +974,8 @@ class Joint3DDataset_Pretrain(Dataset):
             "superpoint": superpoint,  # avoid bugs
             "source_xzy": point_cloud[..., 0:3].astype(np.float32)
         })
+
+        del scan  # avoid out of memory
 
         return ret_dict
 

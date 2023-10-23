@@ -165,7 +165,7 @@ class Trainer(TrainerBase):
                 input_dict[key] = input_dict[key].cuda(non_blocking=True)
         with torch.cuda.amp.autocast(enabled=self.cfg.enable_amp):
             output_dict = self.model(input_dict)
-            loss = output_dict["loss"]
+            loss = output_dict["loss"]            
         self.optimizer.zero_grad()
         if self.cfg.enable_amp:
             self.scaler.scale(loss).backward()

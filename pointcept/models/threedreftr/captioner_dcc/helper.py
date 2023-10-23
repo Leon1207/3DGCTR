@@ -27,27 +27,31 @@ class Matcher(nn.Module):
         nactual_gt = targets["nactual_gt"]
 
         # classification cost: batch x nqueries x ngt matrix
-        pred_cls_prob = outputs["last_sem_cls_scores"]
-        gt_box_sem_cls_labels = (
-            targets["sem_cls_label"]
-            .unsqueeze(1)
-            .expand(batchsize, nqueries, ngt)
-        )
-        class_mat = -torch.gather(pred_cls_prob, 2, gt_box_sem_cls_labels)
+ 
+        # 18 class
+        # pred_cls_prob = outputs["last_sem_cls_scores"].softmax(-1)  # [b, 256, 18(class)]
+        # gt_box_sem_cls_labels = (
+        #     targets["sem_cls_label"]
+        #     .unsqueeze(1)
+        #     .expand(batchsize, nqueries, ngt)
+        # )
+        # class_mat = -torch.gather(pred_cls_prob, 2, gt_box_sem_cls_labels)  # [b, 256, 132]
 
-        # objectness cost: batch x nqueries x 1
-        objectness_mat = -outputs["objectness_prob"].unsqueeze(-1)
-
-        # center cost: batch x nqueries x ngt
-        center_mat = outputs["center_dist"].detach()
+        # 256 class
+        positive_map = targets["positive_map"]  # [B, 132, 256]
+        pred_cls_prob = outputs["last_sem_cls_scores"].softmax(-1)  # [B, 132, 256]
+        if pred_cls_prob.shape[-1] != positive_map.shape[-1]:
+            positive_map = positive_map[..., :pred_cls_prob.shape[-1]]
+        class_mat = torch.stack([
+            -torch.matmul(pred_cls_prob[b], positive_map[b, targets["box_label_mask"][b].long()].transpose(0, 1))
+            for b in range(batchsize)
+        ], dim=0)  # [B, 256, 132]
 
         # giou cost: batch x nqueries x ngt
         giou_mat = -outputs["gious"].detach()
 
         final_cost = (
             self.cost_class * class_mat
-            + self.cost_objectness * objectness_mat
-            + self.cost_center * center_mat
             + self.cost_giou * giou_mat
         )
 

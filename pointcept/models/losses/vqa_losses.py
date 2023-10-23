@@ -860,7 +860,6 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             + weight * loss_sem_align
         ) + 10 * loss_mask + 2 * loss_dice + 5 * loss_caption
     )
-    # print("caption loss: ", loss_caption.item())
     end_points['loss_ce'] = loss_ce
     end_points['loss_bbox'] = loss_bbox
     end_points['loss_giou'] = loss_giou

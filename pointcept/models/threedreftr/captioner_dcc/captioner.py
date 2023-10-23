@@ -51,19 +51,12 @@ def hungarian_matching(matcher: Matcher, end_points: dict, targets: dict) -> dic
     out_bbox = torch.cat([outputs['last_center'], outputs['last_pred_size']], dim=-1)  # [8, 256, 6]
     tgt_bbox = torch.cat([targets['center_label'], targets['size_gts']], dim=-1)  # [8, 132, 6]
 
-    # for match only here
     outputs["gious"] = torch.stack([
             generalized_box_iou3d(
                 box_cxcyczwhd_to_xyzxyz(o),
-                box_cxcyczwhd_to_xyzxyz(t)
-            ) for o, t in zip(out_bbox, tgt_bbox)
-        ], dim=0)  # [8, 256, 132]
-
-    center_dist = torch.cdist(
-        normalized_center(outputs["last_center"]), 
-        normalized_center(targets["center_label"]), p=1
-    )  # [8, 256, 132]
-    outputs["center_dist"] = center_dist
+                box_cxcyczwhd_to_xyzxyz(t[targets['box_label_mask'][b].long()])  # [targets['box_label_mask'][b].long()]
+            ) for b, (o, t) in enumerate(zip(out_bbox, tgt_bbox))
+        ], dim=0)  # [b, 256, 132]
     
     return matcher(outputs, targets)
 

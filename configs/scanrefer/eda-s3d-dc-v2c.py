@@ -1,13 +1,20 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 6 # bs: total bs in all gpus  108
+# bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
+
+batch_size = 6 
+batch_size_val = 6
+batch_size_test = 6
+
+# batch_size = 64
+# batch_size_val = 16
+# batch_size_test = 16
+
 mix_prob = 0.8
-empty_cache = False
 enable_amp = True
-num_worker = 1
-batch_size_val = 1
-batch_size_test = 1
-eval_freq = 1
+num_worker = 4
+eval_freq = 20
+find_unused_parameters = True
 weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
 
 # model settings
@@ -21,14 +28,24 @@ model = dict(
 )
 
 # scheduler settings
-epoch = 100
-eval_epoch = 100
+epoch = 720
+eval_epoch = 720
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+
+hooks = [
+    dict(type="CheckpointLoader", keywords='module.', replacement=''),  # one gpu
+    # dict(type="CheckpointLoader"),  # multi gpus
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
 
 data = dict(
     num_classes=13,
@@ -128,15 +145,6 @@ data = dict(
         )
     )
 )
-
-hooks = [
-    dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
 
 # tester
 test = dict(

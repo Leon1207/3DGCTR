@@ -109,6 +109,7 @@ def beam_search_decode(transformer: Callable, **kwargs) -> Tensor:
                     .reshape(batch * nbeams, -1, channel)
                 )
             )
+
             last_word_logits = step_output.logits[:, -1, :].reshape(
                 batch, nbeams, -1
             )   # batch x nbeams x nvocabs

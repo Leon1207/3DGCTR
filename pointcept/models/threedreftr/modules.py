@@ -167,7 +167,7 @@ class ClsAgnosticPredictHead(nn.Module):
 
         # step 2. class
         if self.compute_sem_scores:
-            sem_cls_scores = self.sem_cls_scores_head(features).transpose(2, 1)  # (B, num_proposal, num_class)
+            sem_cls_scores = self.sem_cls_scores_head(features).transpose(2, 1)  # (B, num_proposal, num_class=256)
 
         end_points[f'{prefix}base_xyz'] = base_xyz
         end_points[f'{prefix}center'] = center

@@ -151,7 +151,7 @@ class DefaultCaptioner(nn.Module):
             self.set_criterion,
             query_points_obj_topk=5
         )
-            return dict(loss=loss)
+            return dict(loss=loss, caption_loss=end_points['loss_caption'])
         # eval
         else:
             self.set_criterion.eval()

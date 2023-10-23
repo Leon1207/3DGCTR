@@ -258,7 +258,8 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         if split in ["train", "val"]:
             
             self.scanrefer = SCANREFER['language'][split]
-            self.scan_names = SCANREFER['scene_list'][split][:100]  # debug
+            self.scan_names = SCANREFER['scene_list'][split]
+            # self.scan_names = SCANREFER['scene_list'][split][:100]  # debug
             self.split = split
             print(f"kept {len(self.scan_names)} scans out of {len(all_scan_names)}")
             
@@ -279,10 +280,12 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         self.gathered_language = self.preprocess_and_gather_language()
         self.multiview_data = {}
 
+    def default_dict_factory(self):
+        return defaultdict(list)
 
     def preprocess_and_gather_language(self):
         
-        gathered_language = defaultdict(lambda : defaultdict(list))
+        gathered_language = defaultdict(self.default_dict_factory)
         
         for lang_dict in tqdm.tqdm(self.scanrefer):
             scene_id  = lang_dict['scene_id']

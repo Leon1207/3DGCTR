@@ -17,17 +17,19 @@ from pointcept.utils.grounding_evaluator import GroundingEvaluator as Gdeval
 from pointcept.models.losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
 from collections import OrderedDict, defaultdict
 from pointcept.datasets.scanrefer_jointdc import SCANREFER
-from pointcept.datasets.misc import SmoothedValue
-from pointcept.utils.grounding_evaluator import _iou3d_par, box_cxcyczwhd_to_xyzxyz
+from pointcept.utils.grounding_evaluator import _iou3d_par, box_cxcyczwhd_to_xyzxyz, box2points
 import pointcept.utils.capeval.bleu.bleu as capblue
 import pointcept.utils.capeval.cider.cider as capcider
 import pointcept.utils.capeval.rouge.rouge as caprouge
 import pointcept.utils.capeval.meteor.meteor as capmeteor
+from pointcept.utils.proposal_parser import parse_predictions as parse_predictions_v2c
+from pointcept.datasets.box_util import box3d_iou_batch_tensor
 
 from .default import HookBase
 from .builder import HOOKS
 import os, json
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+MAX_NUM_OBJ = 132
 
 
 @HOOKS.register_module()
@@ -529,7 +531,8 @@ class GroundingEvaluator(HookBase):
                 inputs["train"] = False
 
             # STEP Forward pass
-            end_points = self.trainer.model(inputs)
+            with torch.no_grad():
+                end_points = self.trainer.model(inputs)
 
             # STEP Compute loss
             _, end_points = criterion(
@@ -669,12 +672,13 @@ class CaptionEvaluator(HookBase):
                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
         self.test_min_iou = 0.50
-        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"  # modify
+        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
         self.criterion = f'CiDEr@{self.test_min_iou}'
         dataset_config = ScannetDatasetConfig(18)
+        # Used for AP calculation
         self.config_dict = {
             'remove_empty_box': False, 'use_3d_nms': True,
-            'nms_iou': 0.3, 'use_old_type_nms': False, 'cls_nms': True,
+            'nms_iou': 0.25, 'use_old_type_nms': False, 'cls_nms': True,
             'per_class_proposal': True, 'conf_thresh': 0.0,
             'dataset_config': dataset_config,
             'hungarian_loss': True
@@ -691,6 +695,8 @@ class CaptionEvaluator(HookBase):
     def eval(self):
         self.trainer.logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
         self.trainer.model.eval()
+        if self.checkpoint_dir.split("/")[-1] == 'captions_result':
+            self.checkpoint_dir = self.checkpoint_dir + "/" + self.trainer.cfg.save_path.split("/")[-1]
         
         # prepare ground truth caption labels
         print("preparing corpus...")
@@ -700,46 +706,87 @@ class CaptionEvaluator(HookBase):
         
         ### initialize and prepare for evaluation
         num_batches = len(self.trainer.val_loader)
-        time_delta = SmoothedValue(window_size=10)
         candidates = {'caption': OrderedDict({}), 'iou': defaultdict(float)}
         
         for curr_iter, batch_data in enumerate(self.trainer.val_loader):
             
             inputs = self._to_gpu(batch_data)
-            end_points = self.trainer.model(inputs)
+
+            with torch.no_grad():
+                end_points = self.trainer.model(inputs)
             
             # match objects
-            _, nqueries, _ =  end_points['last_center'].shape
+            batch_size, nqueries, _ =  end_points['last_center'].shape
             gt_center = end_points['center_label'][:, :, 0:3]       
             gt_size = end_points['size_gts']                        
             gt_bboxes = torch.cat([gt_center, gt_size], dim=-1)
             pred_center = end_points['last_center']
             pred_size = end_points['last_pred_size']
             pred_bbox = torch.cat([pred_center, pred_size], dim=-1)
+
+            box_corners = torch.stack([torch.from_numpy(box2points(pred_bbox[b].cpu())) 
+                                       for b in range(batch_size)], dim=0).cuda()
+            gt_box_corners = torch.stack([torch.from_numpy(box2points(gt_bboxes[b].cpu())) 
+                                          for b in range(batch_size)], dim=0).cuda()  # [b, 256, 8, 3]
+
+            match_box_ious = box3d_iou_batch_tensor(    # batch, nqueries, MAX_NUM_OBJ
+                (box_corners.unsqueeze(2).repeat(1, 1, MAX_NUM_OBJ, 1, 1).view(-1, 8, 3)),
+                (gt_box_corners.unsqueeze(1).repeat(1, nqueries, 1, 1, 1).view(-1, 8, 3))
+            ).view(batch_size, nqueries, MAX_NUM_OBJ)
             
-            match_box_ious = torch.stack([
-                _iou3d_par(
-                    box_cxcyczwhd_to_xyzxyz(gt_bboxes[b]),  # [B, 132, 6]
-                    box_cxcyczwhd_to_xyzxyz(pred_bbox[b])  # [B, 256, 6]
-                ) for b in range(pred_bbox.shape[0])
-            ], dim=0)  # batch, nqueries, MAX_NUM_OBJ
+            # match_box_ious = torch.stack([
+            #     _iou3d_par(
+            #         box_cxcyczwhd_to_xyzxyz(gt_bboxes[b]),  # [B, 132, 6] [end_points['box_label_mask'][b].long()]
+            #         box_cxcyczwhd_to_xyzxyz(pred_bbox[b])  # [B, 256, 6] 
+            #     )[0] for b in range(pred_bbox.shape[0])
+            # ], dim=0).transpose(-1, -2)  # batch, 256, 132
             
             match_box_ious, match_box_idxs = match_box_ious.max(-1) # batch, nqueries
             match_box_idxs = torch.gather(
                 batch_data['gt_box_object_ids'], 1, 
                 match_box_idxs
             ) # batch, nqueries
-            
+
+            wordidx = np.array([
+                0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
+                12, 13, 13, 14, 15, 16, 16, 17, 17, 18, 18
+            ])  # 18+1（not mentioned）
+            tokenidx = np.array([
+                1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
+                25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 42, 44, 45
+            ])  # 18 token span
+
+            proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
+            proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
+            sem_scores = torch.matmul(proj_queries, proj_tokens.transpose(-1, -2))
+            sem_scores_ = sem_scores / 0.07  # (B, Q, tokens)
+            sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)
+            sem_scores = sem_scores.to(sem_scores_.device)
+            sem_scores[:, :sem_scores_.size(1), :sem_scores_.size(2)] = sem_scores_
+            end_points['last_sem_cls_scores'] = sem_scores  # ([B, 256, 256])
+
+            sem_cls = torch.zeros_like(end_points['last_sem_cls_scores'])[..., :19] # ([B, 256, 19])
+            for w, t in zip(wordidx, tokenidx):
+                sem_cls[..., w] += end_points['last_sem_cls_scores'][..., t]
+            end_points['last_sem_cls_scores'] = sem_cls
+            end_points['objectness_prob'] = 1 - end_points["last_sem_cls_scores"][..., -1]  # [b, 256]
+
             # ---- Checkout bounding box ious and semantic logits
             good_bbox_masks = match_box_ious > self.test_min_iou     # batch, nqueries
-            good_bbox_masks &= end_points["sem_cls_logits"].argmax(-1) != (
-                end_points["sem_cls_logits"].shape[-1] - 1
+            good_bbox_masks &= end_points["last_sem_cls_scores"].argmax(-1) != (
+                end_points["last_sem_cls_scores"].shape[-1] - 1
             )
-            
+
             # ---- add nms to get accurate predictions
-            nms_bbox_masks = parse_predictions(
-                end_points, self.config_dict, 'last',
-                size_cls_agnostic=True)
+            # _, nms_bbox_masks = parse_predictions(end_points, self.config_dict, "last_", size_cls_agnostic=True)  # [b, 256]
+
+            nms_bbox_masks = parse_predictions_v2c(
+                box_corners, 
+                end_points["last_sem_cls_scores"],  
+                end_points['objectness_prob'],
+                batch_data['point_clouds']
+            )  # [b, 256]
+
             nms_bbox_masks = torch.from_numpy(nms_bbox_masks).long() == 1
             good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)
             
@@ -769,12 +816,11 @@ class CaptionEvaluator(HookBase):
                             captions[idx][prop_id]
                         ]
             
-            if curr_iter % 50 == 0:
-                mem_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
-                self.trainer.logger.info(
-                    f"Evaluate; Batch [{curr_iter}/{num_batches}]; "
-                    f"Iter time {time_delta.avg:0.2f}; Mem {mem_mb:0.2f}MB"
-                )
+            mem_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
+            self.trainer.logger.info(
+                f"Evaluate; Batch [{curr_iter}/{num_batches}]; "
+                f"Mem {mem_mb:0.2f}MB"
+            )
         
         ### message out
         missing_proposals = len(corpus.keys() - candidates['caption'].keys())
@@ -1081,172 +1127,351 @@ def eval_det_cls_wrapper(arguments):
     rec, prec, ap = eval_det_cls(pred, gt, ovthresh, use_07_metric, get_iou_func)
     return (rec, prec, ap)
 
+def softmax(x):
+        """Numpy function for softmax."""
+        shape = x.shape
+        probs = np.exp(x - np.max(x, axis=len(shape) - 1, keepdims=True))
+        probs /= np.sum(probs, axis=len(shape) - 1, keepdims=True)
+        return probs
+
+def flip_axis_to_camera(pc):
+    """
+    Flip X-right, Y-forward, Z-up to X-right, Y-down, Z-forward.
+
+    Input and output are both (N, 3) array
+    """
+    pc2 = np.copy(pc)
+    pc2[..., [0, 1, 2]] = pc2[..., [0, 2, 1]]  # cam X,Y,Z = depth X,-Z,Y
+    pc2[..., 1] *= -1
+    return pc2
+
+def roty(t):
+    """Rotation about the y-axis."""
+    c = np.cos(t)
+    s = np.sin(t)
+    return np.array([[c, 0, s],
+                    [0, 1, 0],
+                    [-s, 0, c]])
+
+def get_3d_box(box_size, heading_angle, center):
+    ''' box_size is array(l,w,h), heading_angle is radius clockwise from pos x axis, center is xyz of box center
+        output (8,3) array for 3D box cornders
+        Similar to utils/compute_orientation_3d
+    '''
+    R = roty(heading_angle)
+    l, w, h = box_size
+    x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2];
+    y_corners = [h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2];
+    z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2];
+    corners_3d = np.dot(R, np.vstack([x_corners, y_corners, z_corners]))
+    corners_3d[0, :] = corners_3d[0, :] + center[0];
+    corners_3d[1, :] = corners_3d[1, :] + center[1];
+    corners_3d[2, :] = corners_3d[2, :] + center[2];
+    corners_3d = np.transpose(corners_3d)
+    return corners_3d
+
+def flip_axis_to_depth(pc):
+    """Inverse of flip_axis_to_camera."""
+    pc2 = np.copy(pc)
+    pc2[..., [0, 1, 2]] = pc2[..., [0, 2, 1]]  # depth X,Y,Z = cam X,Z,-Y
+    pc2[..., 2] *= -1
+    return pc2
+
+def in_hull(p, hull):
+    from scipy.spatial import Delaunay
+    if not isinstance(hull, Delaunay):
+        hull = Delaunay(hull)
+    return hull.find_simplex(p) >= 0
+
+def extract_pc_in_box3d( pc, box3d):
+    ''' pc: (N,3), box3d: (8,3) '''
+    box3d_roi_inds = in_hull(pc[:, 0:3], box3d)
+    return pc[box3d_roi_inds, :], box3d_roi_inds
+
+def nms_3d_faster_samecls(boxes, overlap_threshold, old_type=False):
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    z1 = boxes[:, 2]
+    x2 = boxes[:, 3]
+    y2 = boxes[:, 4]
+    z2 = boxes[:, 5]
+    score = boxes[:, 6]
+    cls = boxes[:, 7]
+    area = (x2 - x1) * (y2 - y1) * (z2 - z1)
+
+    I = np.argsort(score)
+    pick = []
+    while (I.size != 0):
+        last = I.size
+        i = I[-1]
+        pick.append(i)
+
+        xx1 = np.maximum(x1[i], x1[I[:last - 1]])
+        yy1 = np.maximum(y1[i], y1[I[:last - 1]])
+        zz1 = np.maximum(z1[i], z1[I[:last - 1]])
+        xx2 = np.minimum(x2[i], x2[I[:last - 1]])
+        yy2 = np.minimum(y2[i], y2[I[:last - 1]])
+        zz2 = np.minimum(z2[i], z2[I[:last - 1]])
+        cls1 = cls[i]
+        cls2 = cls[I[:last - 1]]
+
+        l = np.maximum(0, xx2 - xx1)
+        w = np.maximum(0, yy2 - yy1)
+        h = np.maximum(0, zz2 - zz1)
+
+        if old_type:
+            o = (l * w * h) / area[I[:last - 1]]
+        else:
+            inter = l * w * h
+            o = inter / (area[i] + area[I[:last - 1]] - inter)
+        o = o * (cls1 == cls2)
+
+        I = np.delete(I, np.concatenate(([last - 1], np.where(o > overlap_threshold)[0])))
+
+    return pick
+
+def nms_3d_faster(boxes, overlap_threshold, old_type=False):
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    z1 = boxes[:, 2]
+    x2 = boxes[:, 3]
+    y2 = boxes[:, 4]
+    z2 = boxes[:, 5]
+    score = boxes[:, 6]
+    area = (x2 - x1) * (y2 - y1) * (z2 - z1)
+
+    I = np.argsort(score)
+    pick = []
+    while (I.size != 0):
+        last = I.size
+        i = I[-1]
+        pick.append(i)
+
+        xx1 = np.maximum(x1[i], x1[I[:last - 1]])
+        yy1 = np.maximum(y1[i], y1[I[:last - 1]])
+        zz1 = np.maximum(z1[i], z1[I[:last - 1]])
+        xx2 = np.minimum(x2[i], x2[I[:last - 1]])
+        yy2 = np.minimum(y2[i], y2[I[:last - 1]])
+        zz2 = np.minimum(z2[i], z2[I[:last - 1]])
+
+        l = np.maximum(0, xx2 - xx1)
+        w = np.maximum(0, yy2 - yy1)
+        h = np.maximum(0, zz2 - zz1)
+
+        if old_type:
+            o = (l * w * h) / area[I[:last - 1]]
+        else:
+            inter = l * w * h
+            o = inter / (area[i] + area[I[:last - 1]] - inter)
+
+        I = np.delete(I, np.concatenate(([last - 1], np.where(o > overlap_threshold)[0])))
+
+    return pick
+
+def sigmoid(x):
+    """Numpy function for sigmoid."""
+    s = 1 / (1 + np.exp(-x))
+    return s
+
+def nms_2d_faster(boxes, overlap_threshold, old_type=False):
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+    score = boxes[:, 4]
+    area = (x2 - x1) * (y2 - y1)
+
+    I = np.argsort(score)
+    pick = []
+    while (I.size != 0):
+        last = I.size
+        i = I[-1]
+        pick.append(i)
+
+        xx1 = np.maximum(x1[i], x1[I[:last - 1]])
+        yy1 = np.maximum(y1[i], y1[I[:last - 1]])
+        xx2 = np.minimum(x2[i], x2[I[:last - 1]])
+        yy2 = np.minimum(y2[i], y2[I[:last - 1]])
+
+        w = np.maximum(0, xx2 - xx1)
+        h = np.maximum(0, yy2 - yy1)
+
+        if old_type:
+            o = (w * h) / area[I[:last - 1]]
+        else:
+            inter = w * h
+            o = inter / (area[i] + area[I[:last - 1]] - inter)
+
+        I = np.delete(I, np.concatenate(([last - 1], np.where(o > overlap_threshold)[0])))
+
+    return pick
+
 def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=False):
-        """ Parse predictions to OBB parameters and suppress overlapping boxes
+    """ Parse predictions to OBB parameters and suppress overlapping boxes
 
-        Args:
-            end_points: dict
-                {point_clouds, center, heading_scores, heading_residuals,
-                size_scores, size_residuals, sem_cls_scores}
-            config_dict: dict
-                {dataset_config, remove_empty_box, use_3d_nms, nms_iou,
-                use_old_type_nms, conf_thresh, per_class_proposal}
-        Returns:
-            batch_pred_map_cls: a list of len == batch size (BS)
-                [pred_list_i], i = 0, 1, ..., BS-1
-                where pred_list_i = [(pred_sem_cls, box_params, box_score)_j]
-                where j = 0, ..., num of valid detections - 1 from sample input i
-        """
-        pred_center = end_points[f'{prefix}center']  # (B,num_proposal=256,3)
-        # pred_heading_class = torch.argmax(end_points[f'{prefix}heading_scores'], -1)  # B,num_proposal
-        # pred_heading_residual = torch.gather(end_points[f'{prefix}heading_residuals'], 2,
-        #                                      pred_heading_class.unsqueeze(-1))  # B,num_proposal,1
-        # pred_heading_residual.squeeze_(2)
+    Args:
+        end_points: dict
+            {point_clouds, center, heading_scores, heading_residuals,
+            size_scores, size_residuals, sem_cls_scores}
+        config_dict: dict
+            {dataset_config, remove_empty_box, use_3d_nms, nms_iou,
+            use_old_type_nms, conf_thresh, per_class_proposal}
+    Returns:
+        batch_pred_map_cls: a list of len == batch size (BS)
+            [pred_list_i], i = 0, 1, ..., BS-1
+            where pred_list_i = [(pred_sem_cls, box_params, box_score)_j]
+            where j = 0, ..., num of valid detections - 1 from sample input i
+    """
+    pred_center = end_points[f'{prefix}center']  # (B,num_proposal=256,3)
+    # pred_heading_class = torch.argmax(end_points[f'{prefix}heading_scores'], -1)  # B,num_proposal
+    # pred_heading_residual = torch.gather(end_points[f'{prefix}heading_residuals'], 2,
+    #                                      pred_heading_class.unsqueeze(-1))  # B,num_proposal,1
+    # pred_heading_residual.squeeze_(2)
 
-        if size_cls_agnostic:
-            pred_size = end_points[f'{prefix}pred_size']  # (B, num_proposal, 3)
-        else:
-            pred_size_class = torch.argmax(end_points[f'{prefix}size_scores'], -1)  # B,num_proposal
-            pred_size_residual = torch.gather(end_points[f'{prefix}size_residuals'], 2,
-                                            pred_size_class.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1,
-                                                                                                3))  # B,num_proposal,1,3
-            pred_size_residual.squeeze_(2)
-        pred_sem_cls = torch.argmax(end_points[f'{prefix}sem_cls_scores'][..., :-1], -1)  # B,num_proposal
-        sem_cls_probs = self.softmax(end_points[f'{prefix}sem_cls_scores'].detach().cpu().numpy())  # softmax, B,num_proposal,19
+    if size_cls_agnostic:
+        pred_size = end_points[f'{prefix}pred_size']  # (B, num_proposal, 3)
+    else:
+        pred_size_class = torch.argmax(end_points[f'{prefix}size_scores'], -1)  # B,num_proposal
+        pred_size_residual = torch.gather(end_points[f'{prefix}size_residuals'], 2,
+                                        pred_size_class.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1,
+                                                                                            3))  # B,num_proposal,1,3
+        pred_size_residual.squeeze_(2)
+    pred_sem_cls = torch.argmax(end_points[f'{prefix}sem_cls_scores'][..., :-1], -1)  # B,num_proposal
+    sem_cls_probs = softmax(end_points[f'{prefix}sem_cls_scores'].detach().cpu().numpy())  # softmax, B,num_proposal,19
 
-        num_proposal = pred_center.shape[1]     # 256
-        # Since we operate in upright_depth coord for points, while util functions
-        # assume upright_camera coord.
-        # pred_size_check = end_points[f'{prefix}pred_size']  # B,num_proposal,3
-        # pred_bbox_check = end_points[f'{prefix}bbox_check']  # B,num_proposal,3
+    num_proposal = pred_center.shape[1]     # 256
+    # Since we operate in upright_depth coord for points, while util functions
+    # assume upright_camera coord.
+    # pred_size_check = end_points[f'{prefix}pred_size']  # B,num_proposal,3
+    # pred_bbox_check = end_points[f'{prefix}bbox_check']  # B,num_proposal,3
 
-        bsize = pred_center.shape[0]
-        pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
-        pred_center_upright_camera = self.flip_axis_to_camera(pred_center.detach().cpu().numpy())
-        for i in range(bsize):
-            for j in range(num_proposal):
-                heading_angle = 0  #config_dict['dataset_config'].class2angle( \
-                #     pred_heading_class[i, j].detach().cpu().numpy(), pred_heading_residual[i, j].detach().cpu().numpy())
-                if size_cls_agnostic:
-                    box_size = pred_size[i, j].detach().cpu().numpy()
-                else:
-                    box_size = config_dict['dataset_config'].class2size( \
-                        int(pred_size_class[i, j].detach().cpu().numpy()), pred_size_residual[i, j].detach().cpu().numpy())
-                
-                corners_3d_upright_camera = self.get_3d_box(box_size, heading_angle, pred_center_upright_camera[i, j, :])
-                pred_corners_3d_upright_camera[i, j] = corners_3d_upright_camera
-
-        K = pred_center.shape[1]  # K==num_proposal
-        nonempty_box_mask = np.ones((bsize, K))
-
-        if config_dict['remove_empty_box']:
-            # -------------------------------------
-            # Remove predicted boxes without any point within them..
-            batch_pc = end_points['point_clouds'].cpu().numpy()[:, :, 0:3]  # B,N,3
-            for i in range(bsize):
-                pc = batch_pc[i, :, :]  # (N,3)
-                for j in range(K):
-                    box3d = pred_corners_3d_upright_camera[i, j, :, :]  # (8,3)
-                    box3d = self.flip_axis_to_depth(box3d)
-                    pc_in_box, inds = self.extract_pc_in_box3d(pc, box3d)
-                    if len(pc_in_box) < 5:
-                        nonempty_box_mask[i, j] = 0
-            # -------------------------------------
-        if config_dict.get('hungarian_loss', False):
-            # obj_logits = np.zeros(pred_center[:,:,None,0].shape) + 5 # (B,K,1)
-            # obj_logits[end_points[f'{prefix}indices']] = 5
-            if f'{prefix}objectness_scores' in end_points:
-                obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
-                obj_prob = self.sigmoid(obj_logits)  # (B,K)
-            else: 
-                obj_prob = (1 - sem_cls_probs[:,:,-1])
-                sem_cls_probs = sem_cls_probs[..., :-1] / obj_prob[..., None]
-        else:
-            obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
-            obj_prob = self.sigmoid(obj_logits)[:, :, 0]  # (B,256)
-        
-        if not config_dict['use_3d_nms']:
-            # ---------- NMS input: pred_with_prob in (B,K,7) -----------
-            pred_mask = np.zeros((bsize, K))
-            for i in range(bsize):
-                boxes_2d_with_prob = np.zeros((K, 5))
-                for j in range(K):
-                    boxes_2d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_2d_with_prob[j, 2] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_2d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_2d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_2d_with_prob[j, 4] = obj_prob[i, j]
-                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
-                pick = nms_2d_faster(boxes_2d_with_prob[nonempty_box_mask[i, :] == 1, :],
-                                    config_dict['nms_iou'], config_dict['use_old_type_nms'])
-                assert (len(pick) > 0)
-                pred_mask[i, nonempty_box_inds[pick]] = 1
-            # ---------- NMS output: pred_mask in (B,K) -----------
-        elif config_dict['use_3d_nms'] and (not config_dict['cls_nms']):
-            # ---------- NMS input: pred_with_prob in (B,K,7) -----------
-            pred_mask = np.zeros((bsize, K))
-            for i in range(bsize):
-                boxes_3d_with_prob = np.zeros((K, 7))
-                for j in range(K):
-                    boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 6] = obj_prob[i, j]
-                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
-                pick = self.nms_3d_faster(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
-                                    config_dict['nms_iou'], config_dict['use_old_type_nms'])
-                assert (len(pick) > 0)
-                pred_mask[i, nonempty_box_inds[pick]] = 1
-            # ---------- NMS output: pred_mask in (B,K) -----------
-        # 3D NMS
-        elif config_dict['use_3d_nms'] and config_dict['cls_nms']:
-            # ---------- NMS input: pred_with_prob in (B,K,8) -----------
-            pred_mask = np.zeros((bsize, K))
-            for i in range(bsize):
-                boxes_3d_with_prob = np.zeros((K, 8))
-                for j in range(K):
-                    boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
-                    boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
-                    boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
-                    boxes_3d_with_prob[j, 6] = obj_prob[i, j]
-                    boxes_3d_with_prob[j, 7] = pred_sem_cls[i, j]  # only suppress if the two boxes are of the same class!!
-                nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
-                pick = self.nms_3d_faster_samecls(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
-                                            config_dict['nms_iou'], config_dict['use_old_type_nms'])
-                # assert (len(pick) > 0)
-                if len(pick) > 0:
-                    pred_mask[i, nonempty_box_inds[pick]] = 1
-            end_points[f'{prefix}pred_mask'] = pred_mask
-            # ---------- NMS output: pred_mask in (B,K) -----------
-
-        batch_pred_map_cls = []  # a list (len: batch_size) of list (len: num of predictions per sample) of tuples of pred_cls, pred_box and conf (0-1)
-        for i in range(bsize):
-            if config_dict['per_class_proposal']:
-                cur_list = []
-                for ii in range(config_dict['dataset_config'].num_class):
-                    # if config_dict.get('hungarian_loss', False) and ii == config_dict['dataset_config'].num_class - 1:
-                    #    continue
-                    try:
-                        cur_list += [
-                            (ii, pred_corners_3d_upright_camera[i, j], sem_cls_probs[i, j, ii] * obj_prob[i, j])
-                            for j in range(pred_center.shape[1])
-                            if pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']
-                        ]
-                    except:
-                        st()
-                batch_pred_map_cls.append(cur_list)
+    bsize = pred_center.shape[0]
+    pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
+    pred_center_upright_camera = flip_axis_to_camera(pred_center.detach().cpu().numpy())
+    for i in range(bsize):
+        for j in range(num_proposal):
+            heading_angle = 0  #config_dict['dataset_config'].class2angle( \
+            #     pred_heading_class[i, j].detach().cpu().numpy(), pred_heading_residual[i, j].detach().cpu().numpy())
+            if size_cls_agnostic:
+                box_size = pred_size[i, j].detach().cpu().numpy()
             else:
-                batch_pred_map_cls.append([(pred_sem_cls[i, j].item(), pred_corners_3d_upright_camera[i, j], obj_prob[i, j]) \
-                                        for j in range(pred_center.shape[1]) if
-                                        pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']])
+                box_size = config_dict['dataset_config'].class2size( \
+                    int(pred_size_class[i, j].detach().cpu().numpy()), pred_size_residual[i, j].detach().cpu().numpy())
+            
+            corners_3d_upright_camera = get_3d_box(box_size, heading_angle, pred_center_upright_camera[i, j, :])
+            pred_corners_3d_upright_camera[i, j] = corners_3d_upright_camera
 
-        return batch_pred_map_cls
+    K = pred_center.shape[1]  # K==num_proposal
+    nonempty_box_mask = np.ones((bsize, K))
+
+    if config_dict['remove_empty_box']:
+        # -------------------------------------
+        # Remove predicted boxes without any point within them..
+        batch_pc = end_points['point_clouds'].reshape(bsize, -1, 6).cpu().numpy()[:, :, 0:3]  # B,N,3
+        for i in range(bsize):
+            pc = batch_pc[i, :, :]  # (N,3)
+            for j in range(K):
+                box3d = pred_corners_3d_upright_camera[i, j, :, :]  # (8,3)
+                box3d = flip_axis_to_depth(box3d)
+                pc_in_box, inds = extract_pc_in_box3d(pc, box3d)
+                if len(pc_in_box) < 5:
+                    nonempty_box_mask[i, j] = 0
+        # -------------------------------------
+    if config_dict.get('hungarian_loss', False):
+        # obj_logits = np.zeros(pred_center[:,:,None,0].shape) + 5 # (B,K,1)
+        # obj_logits[end_points[f'{prefix}indices']] = 5
+        if f'{prefix}objectness_scores' in end_points:
+            obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
+            obj_prob = sigmoid(obj_logits)  # (B,K)
+        else: 
+            obj_prob = (1 - sem_cls_probs[:,:,-1])
+            sem_cls_probs = sem_cls_probs[..., :-1] / obj_prob[..., None]
+    else:
+        obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
+        obj_prob = sigmoid(obj_logits)[:, :, 0]  # (B,256)
+    
+    if not config_dict['use_3d_nms']:
+        # ---------- NMS input: pred_with_prob in (B,K,7) -----------
+        pred_mask = np.zeros((bsize, K))
+        for i in range(bsize):
+            boxes_2d_with_prob = np.zeros((K, 5))
+            for j in range(K):
+                boxes_2d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
+                boxes_2d_with_prob[j, 2] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
+                boxes_2d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
+                boxes_2d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
+                boxes_2d_with_prob[j, 4] = obj_prob[i, j]
+            nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
+            pick = nms_2d_faster(boxes_2d_with_prob[nonempty_box_mask[i, :] == 1, :],
+                                config_dict['nms_iou'], config_dict['use_old_type_nms'])
+            assert (len(pick) > 0)
+            pred_mask[i, nonempty_box_inds[pick]] = 1
+        # ---------- NMS output: pred_mask in (B,K) -----------
+    elif config_dict['use_3d_nms'] and (not config_dict['cls_nms']):
+        # ---------- NMS input: pred_with_prob in (B,K,7) -----------
+        pred_mask = np.zeros((bsize, K))
+        for i in range(bsize):
+            boxes_3d_with_prob = np.zeros((K, 7))
+            for j in range(K):
+                boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
+                boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
+                boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
+                boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
+                boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
+                boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
+                boxes_3d_with_prob[j, 6] = obj_prob[i, j]
+            nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
+            pick = nms_3d_faster(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
+                                config_dict['nms_iou'], config_dict['use_old_type_nms'])
+            assert (len(pick) > 0)
+            pred_mask[i, nonempty_box_inds[pick]] = 1
+        # ---------- NMS output: pred_mask in (B,K) -----------
+    # 3D NMS
+    elif config_dict['use_3d_nms'] and config_dict['cls_nms']:
+        # ---------- NMS input: pred_with_prob in (B,K,8) -----------
+        pred_mask = np.zeros((bsize, K))
+        for i in range(bsize):
+            boxes_3d_with_prob = np.zeros((K, 8))
+            for j in range(K):
+                boxes_3d_with_prob[j, 0] = np.min(pred_corners_3d_upright_camera[i, j, :, 0])
+                boxes_3d_with_prob[j, 1] = np.min(pred_corners_3d_upright_camera[i, j, :, 1])
+                boxes_3d_with_prob[j, 2] = np.min(pred_corners_3d_upright_camera[i, j, :, 2])
+                boxes_3d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 0])
+                boxes_3d_with_prob[j, 4] = np.max(pred_corners_3d_upright_camera[i, j, :, 1])
+                boxes_3d_with_prob[j, 5] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
+                boxes_3d_with_prob[j, 6] = obj_prob[i, j]
+                boxes_3d_with_prob[j, 7] = pred_sem_cls[i, j]  # only suppress if the two boxes are of the same class!!
+            nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
+            pick = nms_3d_faster_samecls(boxes_3d_with_prob[nonempty_box_mask[i, :] == 1, :],
+                                        config_dict['nms_iou'], config_dict['use_old_type_nms'])
+            # assert (len(pick) > 0)
+            if len(pick) > 0:
+                pred_mask[i, nonempty_box_inds[pick]] = 1
+        end_points[f'{prefix}pred_mask'] = pred_mask
+        # ---------- NMS output: pred_mask in (B,K) -----------
+
+    batch_pred_map_cls = []  # a list (len: batch_size) of list (len: num of predictions per sample) of tuples of pred_cls, pred_box and conf (0-1)
+    for i in range(bsize):
+        if config_dict['per_class_proposal']:
+            cur_list = []
+            for ii in range(config_dict['dataset_config'].num_class):
+                # if config_dict.get('hungarian_loss', False) and ii == config_dict['dataset_config'].num_class - 1:
+                #    continue
+                try:
+                    cur_list += [
+                        (ii, pred_corners_3d_upright_camera[i, j], sem_cls_probs[i, j, ii] * obj_prob[i, j])
+                        for j in range(pred_center.shape[1])
+                        if pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']
+                    ]
+                except:
+                    st()
+            batch_pred_map_cls.append(cur_list)
+        else:
+            batch_pred_map_cls.append([(pred_sem_cls[i, j].item(), pred_corners_3d_upright_camera[i, j], obj_prob[i, j]) \
+                                    for j in range(pred_center.shape[1]) if
+                                    pred_mask[i, j] == 1 and obj_prob[i, j] > config_dict['conf_thresh']])
+
+    return batch_pred_map_cls, pred_mask
 
 class ScannetDatasetConfig:
 
@@ -1529,7 +1754,7 @@ class DetEvaluator(HookBase):
         # Used for AP calculation
         CONFIG_DICT = {
             'remove_empty_box': False, 'use_3d_nms': True,
-            'nms_iou': 0.3, 'use_old_type_nms': False, 'cls_nms': True,
+            'nms_iou': 0.25, 'use_old_type_nms': False, 'cls_nms': True,
             'per_class_proposal': True, 'conf_thresh': 0.0,
             'dataset_config': dataset_config,
             'hungarian_loss': True
@@ -1593,7 +1818,7 @@ class DetEvaluator(HookBase):
             # for prefix in prefixes:
             prefix = 'last_'
             # pred
-            batch_pred_map_cls = parse_predictions(
+            batch_pred_map_cls, _ = parse_predictions(
                 end_points, CONFIG_DICT, prefix,
                 size_cls_agnostic=True)
             batch_gt_map_cls = self.parse_groundtruths(
@@ -1708,154 +1933,6 @@ class DetEvaluator(HookBase):
     def collate_fn(batch):
         return collate_fn(batch)
 
-    def softmax(self, x):
-        """Numpy function for softmax."""
-        shape = x.shape
-        probs = np.exp(x - np.max(x, axis=len(shape) - 1, keepdims=True))
-        probs /= np.sum(probs, axis=len(shape) - 1, keepdims=True)
-        return probs
-    
-    def sigmoid(self, x):
-        """Numpy function for sigmoid."""
-        s = 1 / (1 + np.exp(-x))
-        return s
-
-    def in_hull(self, p, hull):
-        from scipy.spatial import Delaunay
-        if not isinstance(hull, Delaunay):
-            hull = Delaunay(hull)
-        return hull.find_simplex(p) >= 0
-
-
-    def extract_pc_in_box3d(self, pc, box3d):
-        ''' pc: (N,3), box3d: (8,3) '''
-        box3d_roi_inds = self.in_hull(pc[:, 0:3], box3d)
-        return pc[box3d_roi_inds, :], box3d_roi_inds
-
-    def flip_axis_to_camera(self, pc):
-        """
-        Flip X-right, Y-forward, Z-up to X-right, Y-down, Z-forward.
-
-        Input and output are both (N, 3) array
-        """
-        pc2 = np.copy(pc)
-        pc2[..., [0, 1, 2]] = pc2[..., [0, 2, 1]]  # cam X,Y,Z = depth X,-Z,Y
-        pc2[..., 1] *= -1
-        return pc2
-
-    def flip_axis_to_depth(self, pc):
-        """Inverse of flip_axis_to_camera."""
-        pc2 = np.copy(pc)
-        pc2[..., [0, 1, 2]] = pc2[..., [0, 2, 1]]  # depth X,Y,Z = cam X,Z,-Y
-        pc2[..., 2] *= -1
-        return pc2
-
-    def roty(self, t):
-        """Rotation about the y-axis."""
-        c = np.cos(t)
-        s = np.sin(t)
-        return np.array([[c, 0, s],
-                        [0, 1, 0],
-                        [-s, 0, c]])
-
-    def get_3d_box(self, box_size, heading_angle, center):
-        ''' box_size is array(l,w,h), heading_angle is radius clockwise from pos x axis, center is xyz of box center
-            output (8,3) array for 3D box cornders
-            Similar to utils/compute_orientation_3d
-        '''
-        R = self.roty(heading_angle)
-        l, w, h = box_size
-        x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2];
-        y_corners = [h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2];
-        z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2];
-        corners_3d = np.dot(R, np.vstack([x_corners, y_corners, z_corners]))
-        corners_3d[0, :] = corners_3d[0, :] + center[0];
-        corners_3d[1, :] = corners_3d[1, :] + center[1];
-        corners_3d[2, :] = corners_3d[2, :] + center[2];
-        corners_3d = np.transpose(corners_3d)
-        return corners_3d
-
-    def nms_3d_faster(self, boxes, overlap_threshold, old_type=False):
-        x1 = boxes[:, 0]
-        y1 = boxes[:, 1]
-        z1 = boxes[:, 2]
-        x2 = boxes[:, 3]
-        y2 = boxes[:, 4]
-        z2 = boxes[:, 5]
-        score = boxes[:, 6]
-        area = (x2 - x1) * (y2 - y1) * (z2 - z1)
-
-        I = np.argsort(score)
-        pick = []
-        while (I.size != 0):
-            last = I.size
-            i = I[-1]
-            pick.append(i)
-
-            xx1 = np.maximum(x1[i], x1[I[:last - 1]])
-            yy1 = np.maximum(y1[i], y1[I[:last - 1]])
-            zz1 = np.maximum(z1[i], z1[I[:last - 1]])
-            xx2 = np.minimum(x2[i], x2[I[:last - 1]])
-            yy2 = np.minimum(y2[i], y2[I[:last - 1]])
-            zz2 = np.minimum(z2[i], z2[I[:last - 1]])
-
-            l = np.maximum(0, xx2 - xx1)
-            w = np.maximum(0, yy2 - yy1)
-            h = np.maximum(0, zz2 - zz1)
-
-            if old_type:
-                o = (l * w * h) / area[I[:last - 1]]
-            else:
-                inter = l * w * h
-                o = inter / (area[i] + area[I[:last - 1]] - inter)
-
-            I = np.delete(I, np.concatenate(([last - 1], np.where(o > overlap_threshold)[0])))
-
-        return pick
-
-
-    def nms_3d_faster_samecls(self, boxes, overlap_threshold, old_type=False):
-        x1 = boxes[:, 0]
-        y1 = boxes[:, 1]
-        z1 = boxes[:, 2]
-        x2 = boxes[:, 3]
-        y2 = boxes[:, 4]
-        z2 = boxes[:, 5]
-        score = boxes[:, 6]
-        cls = boxes[:, 7]
-        area = (x2 - x1) * (y2 - y1) * (z2 - z1)
-
-        I = np.argsort(score)
-        pick = []
-        while (I.size != 0):
-            last = I.size
-            i = I[-1]
-            pick.append(i)
-
-            xx1 = np.maximum(x1[i], x1[I[:last - 1]])
-            yy1 = np.maximum(y1[i], y1[I[:last - 1]])
-            zz1 = np.maximum(z1[i], z1[I[:last - 1]])
-            xx2 = np.minimum(x2[i], x2[I[:last - 1]])
-            yy2 = np.minimum(y2[i], y2[I[:last - 1]])
-            zz2 = np.minimum(z2[i], z2[I[:last - 1]])
-            cls1 = cls[i]
-            cls2 = cls[I[:last - 1]]
-
-            l = np.maximum(0, xx2 - xx1)
-            w = np.maximum(0, yy2 - yy1)
-            h = np.maximum(0, zz2 - zz1)
-
-            if old_type:
-                o = (l * w * h) / area[I[:last - 1]]
-            else:
-                inter = l * w * h
-                o = inter / (area[i] + area[I[:last - 1]] - inter)
-            o = o * (cls1 == cls2)
-
-            I = np.delete(I, np.concatenate(([last - 1], np.where(o > overlap_threshold)[0])))
-
-        return pick
-
     def parse_groundtruths(self, end_points, config_dict, size_cls_agnostic):
         """
         Parse groundtruth labels to OBB parameters.
@@ -1901,7 +1978,7 @@ class DetEvaluator(HookBase):
                 else:
                     box_size = config_dict['dataset_config'].class2size(int(size_class_label[i, j].detach().cpu().numpy()),
                                                                         size_residual_label[i, j].detach().cpu().numpy())
-                corners_3d_upright_camera = self.get_3d_box(box_size, heading_angle, gt_center_upright_camera[i, j, :])
+                corners_3d_upright_camera = get_3d_box(box_size, heading_angle, gt_center_upright_camera[i, j, :])
                 gt_corners_3d_upright_camera[i, j] = corners_3d_upright_camera
 
         batch_gt_map_cls = []
