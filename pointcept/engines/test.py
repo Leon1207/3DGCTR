@@ -927,6 +927,9 @@ class DetTester(object):
             for w, t in zip(wordidx, tokenidx):
                 sem_cls[..., w] += end_points['last_sem_cls_scores'][..., t]
             end_points['last_sem_cls_scores'] = sem_cls     # ([B, 256, 19])
+            # class_id = end_points['last_sem_cls_scores'].argmax(-1)  # debug
+            # for b in range(class_id.shape[0]):
+            #     print(class_id[b])
 
             # step Parse predictions
             # for prefix in prefixes:

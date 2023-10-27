@@ -6,6 +6,7 @@ from .scanrefer import Joint3DDataset
 from .scanrefer_jointdc_v2c import Joint3DDataset_JointDC_v2c
 from .scanrefer_pretrain import Joint3DDataset_Pretrain
 from .scanrefer_jointdc import Joint3DDataset_JointDC
+from .scanrefer_debug import Joint3DDataset_debug
 from .scannet_pair import ScanNetPairDataset
 from .arkitscenes import ArkitScenesDataset
 from .structure3d import Structured3DDataset

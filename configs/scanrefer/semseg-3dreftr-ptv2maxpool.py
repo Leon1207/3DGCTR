@@ -1,14 +1,15 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 32 # bs: total bs in all gpus
+batch_size = 1 # bs: total bs in all gpus 32
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
 num_worker = 8
-batch_size_val = 8
-batch_size_test = 8
+batch_size_val = 1  # 8
+batch_size_test = 1  # 8
 find_unused_parameters = True
 eval_freq = 3
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024/model/model_best.pth"  # testing 
 
 # model settings
 model = dict(

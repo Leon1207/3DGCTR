@@ -1,33 +1,33 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 6 # bs: total bs in all gpus  108
+batch_size = 32 # bs: total bs in all gpus
 mix_prob = 0.8
 empty_cache = False
 enable_amp = True
-num_worker = 1
-batch_size_val = 6
-batch_size_test = 6
-eval_freq = 20
-weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+num_worker = 8
+batch_size_val = 8
+batch_size_test = 8
+find_unused_parameters = True
+eval_freq = 3
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-s3d-pretrain/model/model_best.pth"
 
 # model settings
 model = dict(
-    type="DefaultCaptioner",
+    type="DefaultGrounder",
     backbone=dict(
-        type="eda_ptv2_dc",
-        butd="False"  # not used butd
+        type="3dreftr",
+        butd=False
     ),
-    losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 
 # scheduler settings
-epoch = 720
-eval_epoch = 720
+epoch = 100
+eval_epoch = 100
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
-dataset_type = "Joint3DDataset_JointDC"
+dataset_type = "Joint3DDataset"
 data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
@@ -130,17 +130,16 @@ data = dict(
 )
 
 hooks = [
-    dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    dict(type="CheckpointLoader"),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="GroundingEvaluator"),
     dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False)
 ]
 
 # tester
 test = dict(
-    type="DetTester",
-    losses=['boxes', 'labels', 'contrastive_align', 'captions']
+    type="GroundingTester"
 )
 

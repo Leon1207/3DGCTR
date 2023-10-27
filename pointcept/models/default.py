@@ -140,8 +140,47 @@ class DefaultCaptioner(nn.Module):
             "sem_cls_label": input_dict['sem_cls_label'],
             "superpoint": input_dict['superpoint'],
             "positive_map": input_dict['positive_map']
-        }    
+        }     
+        # inputs.update(input_dict)  # debug
+        end_points = self.backbone(inputs)
+        end_points.update(input_dict)
+        # train
+        if self.training:
+            loss, end_points = self.criterion(
+            end_points, 6,
+            self.set_criterion,
+            query_points_obj_topk=5
+        )
+            return dict(loss=loss, caption_loss=end_points['loss_caption'])
+        # eval
+        else:
+            self.set_criterion.eval()
+            return end_points
 
+
+@MODELS.register_module()
+class DebugCaptioner(nn.Module):
+    def __init__(self, 
+                 backbone=None, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+        super().__init__()
+        self.backbone = build_model(backbone)
+        matcher = HungarianMatcher(1, 0, 2, True)
+        self.set_criterion = SetCriterion(
+                matcher=matcher,
+                losses=losses, eos_coef=0.1, temperature=0.07)
+        self.criterion = compute_hungarian_loss
+
+    def forward(self, input_dict):
+
+        inputs = {
+            'point_clouds': input_dict['point_clouds'].float(), 
+            'text': input_dict['utterances'],                   
+            "offset": input_dict['offset'],
+            "source_xzy": input_dict['source_xzy'],
+            "superpoint": input_dict['superpoint'],
+        }     
+        # inputs.update(input_dict)  # debug
         end_points = self.backbone(inputs)
         end_points.update(input_dict)
         # train

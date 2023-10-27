@@ -29,7 +29,7 @@ class Matcher(nn.Module):
         # classification cost: batch x nqueries x ngt matrix
  
         # 18 class
-        # pred_cls_prob = outputs["last_sem_cls_scores"].softmax(-1)  # [b, 256, 18(class)]
+        # pred_cls_prob = outputs["last_sem_cls_prob"].softmax(-1)  # [b, 256, 18(class)], there needs to use sem_cls_prob, not score
         # gt_box_sem_cls_labels = (
         #     targets["sem_cls_label"]
         #     .unsqueeze(1)
@@ -43,16 +43,16 @@ class Matcher(nn.Module):
         if pred_cls_prob.shape[-1] != positive_map.shape[-1]:
             positive_map = positive_map[..., :pred_cls_prob.shape[-1]]
         class_mat = torch.stack([
-            -torch.matmul(pred_cls_prob[b], positive_map[b, targets["box_label_mask"][b].long()].transpose(0, 1))
+            -torch.matmul(pred_cls_prob[b], positive_map[b].transpose(0, 1))
             for b in range(batchsize)
-        ], dim=0)  # [B, 256, 132]
+        ], dim=0)  # [B, 256, 132]  targets["box_label_mask"][b].long()
 
         # giou cost: batch x nqueries x ngt
         giou_mat = -outputs["gious"].detach()
 
         final_cost = (
-            self.cost_class * class_mat
-            + self.cost_giou * giou_mat
+            self.cost_giou * giou_mat 
+            # + self.cost_class * class_mat  # debug
         )
 
         final_cost = final_cost.detach().cpu().numpy()

@@ -4,11 +4,23 @@ batch_size = 6 # bs: total bs in all gpus  108
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-batch_size_val = 6
-batch_size_test = 6
+batch_size_val = 1
+batch_size_test = 1
 eval_freq = 1
 find_unused_parameters = True
-weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-nofilter/model/model_best.pth"
+# weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-alignEDA/model/model_best.pth"
+
+hooks = [
+    dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    # dict(type="CheckpointLoader"), 
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
 
 # model settings
 model = dict(
@@ -128,15 +140,6 @@ data = dict(
         )
     )
 )
-
-hooks = [
-    dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
 
 # tester
 test = dict(

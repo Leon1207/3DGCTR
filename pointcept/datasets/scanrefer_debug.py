@@ -217,7 +217,7 @@ class DatasetConfig(object):
 
 
 @DATASETS.register_module()
-class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
+class Joint3DDataset_debug(torch.utils.data.Dataset):
 
     def __init__(self,
                 split="train",
@@ -473,23 +473,19 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         # HACK: store the instance index
         object_ids[:instance_bboxes.shape[0]] = instance_bboxes[:, -1]
         
-        captions = [
-                'cabinet', 'bed', 'chair', 'sofa', 'table', 'door',
-                'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
-                'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-                'others'
-            ]
         # captions = [
-        #         'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+        #         'cabinet', 'bed', 'chair', 'sofa', 'table', 'door',
         #         'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
         #         'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-        #         'other furniture'
-        #     ]  # debug
+        #         'others'
+        #     ]
+        captions = [
+                'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+                'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
+                'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
+                'other furniture'
+            ] 
         captions = ' . '.join(captions)
-
-        targets = [self.dataset_config.class2type[
-                    self.dataset_config.nyu40id2class[int(ind)]]
-                        for ind in instance_bboxes[:, -2]] #scene0364_00 len(instance_bboxes) 11
 
         ret_dict = {}
         ret_dict["point_clouds"] = torch.from_numpy(point_cloud.astype(np.float32))  # [50000, 6]
@@ -500,13 +496,8 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
             self.dataset_config.nyu40id2class[x]
             for x in instance_bboxes[:, -2][0 : instance_bboxes.shape[0]]
         ]
-        ret_dict["sem_cls_label"] = target_bboxes_semcls.astype(np.int64)
-        ret_dict["box_label_mask"] = target_bboxes_mask.astype(np.float32)
-        ret_dict["og_color"] = pcl_color.astype(np.float32)
-        ret_dict["size_gts"] = raw_sizes.astype(np.float32)
         
         # HACK: add ground truth object ids
-        ret_dict["gt_box_object_ids"] = object_ids.astype(np.int64)
         ret_dict["offset"] = torch.tensor([point_cloud.shape[0]])
         ret_dict["superpoint"] = torch.zeros((1))  # avoid bugs
         ret_dict["source_xzy"] = point_cloud[..., 0:3].astype(np.float32)
@@ -515,65 +506,9 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
                 + ' . not mentioned'
             )
 
-        all_detected_bboxes = np.zeros((MAX_NUM_OBJ, 6))
-        all_detected_bbox_label_mask = np.array([False] * MAX_NUM_OBJ)
-        detected_class_ids = np.zeros((MAX_NUM_OBJ,))
-        detected_logits = np.zeros((MAX_NUM_OBJ, NUM_CLASSES))
-
-        ret_dict["all_detected_boxes"] = all_detected_bboxes.astype(np.float32)
-        ret_dict["all_detected_bbox_label_mask"] = all_detected_bbox_label_mask.astype(np.bool8)
-        ret_dict["all_detected_class_ids"] = detected_class_ids.astype(np.int64)
-        ret_dict["all_detected_logits"] = detected_logits.astype(np.float32)    
-
-        tokens_positive, positive_map, modify_positive_map, pron_positive_map, \
-                other_entity_map, auxi_entity_positive_map, rel_positive_map = self._get_token_positive_map(captions, targets)
-        auxi_box = np.zeros((1, 6))
-
-        ret_dict["tokens_positive"] = tokens_positive.astype(np.int64)
-        ret_dict["positive_map"] = positive_map.astype(np.float32)
-        ret_dict["modify_positive_map"] = modify_positive_map.astype(np.float32)
-        ret_dict["pron_positive_map"] = pron_positive_map.astype(np.float32)
-        ret_dict["other_entity_map" ]= other_entity_map.astype(np.float32)
-        ret_dict["rel_positive_map"] = rel_positive_map.astype(np.float32)
-        ret_dict["auxi_entity_positive_map"] = auxi_entity_positive_map.astype(np.float32)
-        ret_dict["auxi_box"] = auxi_box.astype(np.float32)
         ret_dict["gt_masks"] = np.zeros((MAX_NUM_OBJ, 1))
         ret_dict["language_dataset"] = "scanrefer"
         ret_dict["point_instance_label"] = instance_labels.astype(np.int64)
-
-        # caption label
-        reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))
-        reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
-
-        if self.split == 'train':
-            
-            scene_caption = []
-            if scan_name in self.gathered_language:
-                
-                for instance_id in instance_bboxes[:, -1]:
-                    if instance_id not in self.gathered_language[scan_name]:
-                        caption = ''
-                    else:
-                        caption = random.choice(
-                            self.gathered_language[scan_name][instance_id]
-                        )
-                    scene_caption.append(caption)
-            
-            tokenizer_output = self.tokenizer.batch_encode_plus(
-                scene_caption, 
-                max_length=self.max_des_len, 
-                padding='max_length', 
-                truncation='longest_first', 
-                return_tensors='np'
-            )
-            tokenizer_output['input_ids'] *= tokenizer_output['attention_mask']
-            
-            reference_tokens[:len(instance_bboxes[:, -1])] = tokenizer_output['input_ids']
-            reference_masks[:len(instance_bboxes[:, -1])]  = tokenizer_output['attention_mask']
-            
-        ret_dict['reference_tokens'] = reference_tokens.astype(np.int64)
-        ret_dict['reference_masks'] = reference_masks.astype(np.float32)
-        ret_dict["scan_idx"] = np.array(idx).astype(np.int64)
         
         return ret_dict
     

@@ -2,19 +2,29 @@ _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
 batch_size = 6 # bs: total bs in all gpus  108
 mix_prob = 0.8
-empty_cache = False
 enable_amp = True
-num_worker = 1
-batch_size_val = 6
-batch_size_test = 6
-eval_freq = 20
+num_worker = 4
+batch_size_val = 1
+batch_size_test = 1
+eval_freq = 1
+find_unused_parameters = True
 weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+
+hooks = [
+    dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    # dict(type="CheckpointLoader"), 
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
 
 # model settings
 model = dict(
-    type="DefaultCaptioner",
+    type="DebugCaptioner",
     backbone=dict(
-        type="eda_ptv2_dc",
+        type="3dreftr",
         butd="False"  # not used butd
     ),
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
@@ -27,8 +37,8 @@ optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
-dataset_type = "Joint3DDataset_JointDC"
-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
+dataset_type = "Joint3DDataset_debug"
+data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 data = dict(
     num_classes=13,
@@ -128,15 +138,6 @@ data = dict(
         )
     )
 )
-
-hooks = [
-    dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
 
 # tester
 test = dict(

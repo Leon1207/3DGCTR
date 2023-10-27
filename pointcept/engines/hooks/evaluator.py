@@ -24,6 +24,8 @@ import pointcept.utils.capeval.rouge.rouge as caprouge
 import pointcept.utils.capeval.meteor.meteor as capmeteor
 from pointcept.utils.proposal_parser import parse_predictions as parse_predictions_v2c
 from pointcept.datasets.box_util import box3d_iou_batch_tensor
+import wandb
+import torch.nn.functional as F
 
 from .default import HookBase
 from .builder import HOOKS
@@ -725,18 +727,18 @@ class CaptionEvaluator(HookBase):
             pred_bbox = torch.cat([pred_center, pred_size], dim=-1)
 
             box_corners = torch.stack([torch.from_numpy(box2points(pred_bbox[b].cpu())) 
-                                       for b in range(batch_size)], dim=0).cuda()
+                                       for b in range(batch_size)], dim=0).cuda()  # [b, 256, 8, 3]
             gt_box_corners = torch.stack([torch.from_numpy(box2points(gt_bboxes[b].cpu())) 
-                                          for b in range(batch_size)], dim=0).cuda()  # [b, 256, 8, 3]
+                                          for b in range(batch_size)], dim=0).cuda()  # [b, 132, 8, 3]
 
             match_box_ious = box3d_iou_batch_tensor(    # batch, nqueries, MAX_NUM_OBJ
                 (box_corners.unsqueeze(2).repeat(1, 1, MAX_NUM_OBJ, 1, 1).view(-1, 8, 3)),
                 (gt_box_corners.unsqueeze(1).repeat(1, nqueries, 1, 1, 1).view(-1, 8, 3))
-            ).view(batch_size, nqueries, MAX_NUM_OBJ)
-            
+            ).view(batch_size, nqueries, MAX_NUM_OBJ)  # [b, 256, 132]
+        
             # match_box_ious = torch.stack([
             #     _iou3d_par(
-            #         box_cxcyczwhd_to_xyzxyz(gt_bboxes[b]),  # [B, 132, 6] [end_points['box_label_mask'][b].long()]
+            #         box_cxcyczwhd_to_xyzxyz(gt_bboxes[b]),  # [B, 132, 6]
             #         box_cxcyczwhd_to_xyzxyz(pred_bbox[b])  # [B, 256, 6] 
             #     )[0] for b in range(pred_bbox.shape[0])
             # ], dim=0).transpose(-1, -2)  # batch, 256, 132
@@ -769,26 +771,63 @@ class CaptionEvaluator(HookBase):
             for w, t in zip(wordidx, tokenidx):
                 sem_cls[..., w] += end_points['last_sem_cls_scores'][..., t]
             end_points['last_sem_cls_scores'] = sem_cls
-            end_points['objectness_prob'] = 1 - end_points["last_sem_cls_scores"][..., -1]  # [b, 256]
+            sem_cls_prob = F.softmax(sem_cls, dim=-1)
+            end_points['objectness_prob'] = 1 - sem_cls_prob[..., -1]  # [b, 256]
 
             # ---- Checkout bounding box ious and semantic logits
             good_bbox_masks = match_box_ious > self.test_min_iou     # batch, nqueries
+            class_id = end_points["last_sem_cls_scores"].argmax(-1)
             good_bbox_masks &= end_points["last_sem_cls_scores"].argmax(-1) != (
                 end_points["last_sem_cls_scores"].shape[-1] - 1
-            )
+            )  # debug, main problem laies...
 
             # ---- add nms to get accurate predictions
             # _, nms_bbox_masks = parse_predictions(end_points, self.config_dict, "last_", size_cls_agnostic=True)  # [b, 256]
 
             nms_bbox_masks = parse_predictions_v2c(
                 box_corners, 
-                end_points["last_sem_cls_scores"],  
-                end_points['objectness_prob'],
+                sem_cls_prob[..., :-1],  # [b, 256, 18]
+                end_points['objectness_prob'],  # [b, 256]
                 batch_data['point_clouds']
             )  # [b, 256]
 
             nms_bbox_masks = torch.from_numpy(nms_bbox_masks).long() == 1
-            good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)
+            good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)  # debug, main problem laies...
+
+            # vis
+            # wandb.init(project="vis_s3d", name="dc2")
+            # point_cloud_vis = batch_data['point_clouds'].reshape(-1, 50000, 6)[0].cpu()
+            # og_color_vis = batch_data['og_color'][0].cpu()
+            # point_cloud_vis[:, 3:] = (og_color_vis + torch.tensor([109.8, 97.2, 83.8]) / 256) * 256
+            # gbc = gt_box_corners[0, batch_data['box_label_mask'][0].bool()].cpu()
+            # idx = sem_cls[0].argmax(0).cpu()
+            # # bc = torch.stack([box_corners[0, id] for id in idx], dim=0)
+            # match_obj_id = torch.stack([match_box_idxs[0, id] for id in idx], dim=0)
+            # bc = box_corners[0][good_bbox_masks[0].bool()]
+
+            # wandb.log({
+            #         "point_scene": wandb.Object3D({
+            #             "type": "lidar/beta",
+            #             "points": point_cloud_vis,
+            #             "boxes": np.array(
+            #                 [
+            #                     {
+            #                         "corners": c.tolist(),
+            #                         "label": "target",
+            #                         "color": [0, 255, 0]
+            #                     }
+            #                     for c in gbc
+            #                 ] + [  # predicted boxes
+            #                     {
+            #                         "corners": c.tolist(),
+            #                         "label": "predicted",
+            #                         "color": [255, 0, 0]
+            #                     }
+            #                     for c in bc``
+            #                 ]
+            #             )
+            #         }),
+            #     })
             
             good_bbox_masks = good_bbox_masks.cpu().tolist()
             
@@ -799,6 +838,7 @@ class CaptionEvaluator(HookBase):
             ### calculate measurable indicators on captions
             for idx, scene_id in enumerate(batch_data["scan_idx"].cpu().tolist()):
                 scene_name = SCANREFER['scene_list']['val'][scene_id]
+                # scene_name = "scene0046_00"  # debug
                 for prop_id in range(nqueries):
 
                     if good_bbox_masks[idx][prop_id] is False:

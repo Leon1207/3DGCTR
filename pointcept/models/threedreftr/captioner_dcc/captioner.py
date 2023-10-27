@@ -12,6 +12,9 @@ from pointcept.models.threedreftr.captioner_dcc.generation_utils import generati
 from pointcept.models.threedreftr.captioner_dcc.scst import SCST_Training
 from pointcept.datasets.scanrefer_jointdc import SCANREFER, ScanReferTokenizer
 from pointcept.models.losses.vqa_losses import generalized_box_iou3d, box_cxcyczwhd_to_xyzxyz
+import wandb
+import numpy as np
+from pointcept.utils.grounding_evaluator import _iou3d_par, box_cxcyczwhd_to_xyzxyz, box2points
 
 
 def box_cxcyczwhd_to_xyzxyz(x):
@@ -48,15 +51,15 @@ def hungarian_matching(matcher: Matcher, end_points: dict, targets: dict) -> dic
     targets["num_boxes"] = num_boxes
     targets["num_boxes_replica"] = nactual_gt.sum().item()
 
-    out_bbox = torch.cat([outputs['last_center'], outputs['last_pred_size']], dim=-1)  # [8, 256, 6]
+    out_bbox = torch.cat([outputs['last_center'], outputs['last_pred_size']], dim=-1)  # [8, 256, 6] 
     tgt_bbox = torch.cat([targets['center_label'], targets['size_gts']], dim=-1)  # [8, 132, 6]
 
     outputs["gious"] = torch.stack([
             generalized_box_iou3d(
                 box_cxcyczwhd_to_xyzxyz(o),
-                box_cxcyczwhd_to_xyzxyz(t[targets['box_label_mask'][b].long()])  # [targets['box_label_mask'][b].long()]
-            ) for b, (o, t) in enumerate(zip(out_bbox, tgt_bbox))
-        ], dim=0)  # [b, 256, 132]
+                box_cxcyczwhd_to_xyzxyz(t)
+            ) for o, t in zip(out_bbox, tgt_bbox)
+        ], dim=0)  # [b, 256, MAX_OBJ_NUM=132]
     
     return matcher(outputs, targets)
 
@@ -237,6 +240,48 @@ class Captioner(nn.Module):
         unannotated_proposal = (gt_box_cap_label[..., 0] != 0).long()
         annotated_proposal = unvalid_proposal * unannotated_proposal
         assignments['annotated_proposal'] = annotated_proposal
+
+        # gt_center = data_dict['center_label'][:, :, 0:3]       
+        # gt_size = data_dict['size_gts']                        
+        # gt_bboxes = torch.cat([gt_center, gt_size], dim=-1)
+        # pred_center = end_points['last_center']
+        # pred_size = end_points['last_pred_size']
+        # pred_bbox = torch.cat([pred_center, pred_size], dim=-1)
+        # box_corners = torch.stack([torch.from_numpy(box2points(pred_bbox[b].detach().cpu())) 
+        #                             for b in range(6)], dim=0).cuda()  # [b, 256, 8, 3]
+        # gt_box_corners = torch.stack([torch.from_numpy(box2points(gt_bboxes[b].detach().cpu())) 
+        #                                 for b in range(6)], dim=0).cuda()  # [b, 132, 8, 3]
+        
+        # wandb.init(project="vis_s3d", name="dc3")
+        # point_cloud_vis = data_dict['point_clouds'].reshape(-1, 50000, 6)[0].cpu()
+        # og_color_vis = data_dict['og_color'][0].cpu()
+        # point_cloud_vis[:, 3:] = (og_color_vis + torch.tensor([109.8, 97.2, 83.8]) / 256) * 256
+        # gbc = gt_box_corners[0, data_dict['box_label_mask'][0].bool()].cpu()
+        # bc = box_corners[0, annotated_proposal[0] == 1]
+
+        # wandb.log({
+        #         "point_scene": wandb.Object3D({
+        #             "type": "lidar/beta",
+        #             "points": point_cloud_vis,
+        #             "boxes": np.array(
+        #                 [
+        #                     {
+        #                         "corners": c.tolist(),
+        #                         "label": "target",
+        #                         "color": [0, 255, 0]
+        #                     }
+        #                     for c in gbc
+        #                 ] + [  # predicted boxes
+        #                     {
+        #                         "corners": c.tolist(),
+        #                         "label": "predicted",
+        #                         "color": [255, 0, 0]
+        #                     }
+        #                     for c in bc
+        #                 ]
+        #             )
+        #         }),
+        #     })
         
         # ---- generate caption embeddings for rnn model
         prefix_tokens = end_points['object_features']

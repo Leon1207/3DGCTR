@@ -9,3 +9,4 @@ from .threedreftr_sp import *
 from .eda import *
 from .eda_ptv2_dc import *
 from .eda_ptv2_dets3d import *
+from .eda_ptv2_dc_nosem import *

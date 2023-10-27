@@ -365,7 +365,7 @@ class Joint3DDataset_JointDC(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader
+            for anno in reader  # debug
             if anno['scene_id'] in scan_ids
         ]
 
@@ -1097,6 +1097,9 @@ class Joint3DDataset_JointDC(Dataset):
                 for ind in anno['target_id']
             ])
 
+        object_ids = np.zeros((MAX_NUM_OBJ,))
+        object_ids[:len(anno['target_id'])] = anno['target_id']
+
         ret_dict = {
             'box_label_mask': box_label_mask.astype(np.float32),
             'center_label': gt_bboxes[:, :3].astype(np.float32),
@@ -1161,7 +1164,8 @@ class Joint3DDataset_JointDC(Dataset):
             ),
             "offset": offset,
             "superpoint": superpoint,  # avoid bugs
-            "source_xzy": point_cloud[..., 0:3].astype(np.float32)
+            "source_xzy": point_cloud[..., 0:3].astype(np.float32),
+            "gt_box_object_ids": object_ids.astype(np.int64)
         })
 
         # if anno['scan_id'] == "scene0364_00":
