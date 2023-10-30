@@ -395,6 +395,363 @@ class GroundingTester(object):
     def collate_fn(batch):
         return collate_fn(batch)
 
+from pointcept.utils.eval_det_v2c import eval_det_multiprocessing as eval_det_multiprocessing_v2c
+
+class V2CAPCalculator(object):
+    """Calculating Average Precision"""
+
+    def __init__(
+        self,
+        dataset_config,
+        ap_iou_thresh=[0.25, 0.5],
+        class2type_map=None,
+        exact_eval=True,
+        ap_config_dict=None,
+    ):
+        """
+        Args:
+            ap_iou_thresh: List of float between 0 and 1.0
+                IoU threshold to judge whether a prediction is positive.
+            class2type_map: [optional] dict {class_int:class_name}
+        """
+        self.ap_iou_thresh = ap_iou_thresh
+        if ap_config_dict is None:
+            ap_config_dict = get_ap_config_dict(
+                dataset_config=dataset_config, remove_empty_box=exact_eval
+            )
+        self.ap_config_dict = ap_config_dict
+        self.class2type_map = class2type_map
+        self.reset()
+
+    def make_gt_list(self, gt_box_corners, gt_box_sem_cls_labels, gt_box_present):
+        batch_gt_map_cls = []
+        bsize = gt_box_corners.shape[0]
+        for i in range(bsize):
+            batch_gt_map_cls.append(
+                [
+                    (gt_box_sem_cls_labels[i, j].item(), gt_box_corners[i, j])
+                    for j in range(gt_box_corners.shape[1])
+                    if gt_box_present[i, j] == 1
+                ]
+            )
+        return batch_gt_map_cls
+
+    def step_meter(self, outputs, targets):
+        if "outputs" in outputs:
+            outputs = outputs["outputs"]
+        self.step(
+            predicted_box_corners=outputs["box_corners"],
+            sem_cls_probs=outputs["sem_cls_prob"],
+            objectness_probs=outputs["objectness_prob"],
+            point_cloud=targets["point_clouds"],
+            gt_box_corners=targets["gt_box_corners"],
+            gt_box_sem_cls_labels=targets["gt_box_sem_cls_label"],
+            gt_box_present=targets["gt_box_present"],
+        )
+
+    def step(
+        self,
+        predicted_box_corners,
+        sem_cls_probs,
+        objectness_probs,
+        point_cloud,
+        gt_box_corners,
+        gt_box_sem_cls_labels,
+        gt_box_present,
+    ):
+        """
+        Perform NMS on predicted boxes and threshold them according to score.
+        Convert GT boxes
+        """
+        gt_box_corners = gt_box_corners.cpu().detach().numpy()
+        gt_box_sem_cls_labels = gt_box_sem_cls_labels.cpu().detach().numpy()
+        gt_box_present = gt_box_present.cpu().detach().numpy()
+        batch_gt_map_cls = self.make_gt_list(
+            gt_box_corners, gt_box_sem_cls_labels, gt_box_present
+        )
+
+        batch_pred_map_cls = parse_predictions(
+            predicted_box_corners,
+            sem_cls_probs,
+            objectness_probs,
+            point_cloud,
+            self.ap_config_dict,
+        )
+
+        self.accumulate(batch_pred_map_cls, batch_gt_map_cls)
+
+    def accumulate(self, batch_pred_map_cls, batch_gt_map_cls):
+        """Accumulate one batch of prediction and groundtruth.
+
+        Args:
+            batch_pred_map_cls: a list of lists [[(pred_cls, pred_box_params, score),...],...]
+            batch_gt_map_cls: a list of lists [[(gt_cls, gt_box_params),...],...]
+                should have the same length with batch_pred_map_cls (batch_size)
+        """
+        bsize = len(batch_pred_map_cls)
+        assert bsize == len(batch_gt_map_cls)
+        for i in range(bsize):
+            self.gt_map_cls[self.scan_cnt] = batch_gt_map_cls[i]
+            self.pred_map_cls[self.scan_cnt] = batch_pred_map_cls[i]
+            self.scan_cnt += 1
+
+    def compute_metrics(self):
+        """Use accumulated predictions and groundtruths to compute Average Precision."""
+        overall_ret = OrderedDict()
+        for ap_iou_thresh in self.ap_iou_thresh:
+            ret_dict = OrderedDict()
+            rec, prec, ap = eval_det_multiprocessing_v2c(
+                self.pred_map_cls, self.gt_map_cls, ovthresh=ap_iou_thresh
+            )
+            for key in sorted(ap.keys()):
+                clsname = self.class2type_map[key] if self.class2type_map else str(key)
+                ret_dict["%s Average Precision" % (clsname)] = ap[key]
+            ap_vals = np.array(list(ap.values()), dtype=np.float32)
+            ap_vals[np.isnan(ap_vals)] = 0
+            ret_dict["mAP"] = ap_vals.mean()
+            rec_list = []
+            for key in sorted(ap.keys()):
+                clsname = self.class2type_map[key] if self.class2type_map else str(key)
+                try:
+                    ret_dict["%s Recall" % (clsname)] = rec[key][-1]
+                    rec_list.append(rec[key][-1])
+                except:
+                    ret_dict["%s Recall" % (clsname)] = 0
+                    rec_list.append(0)
+            ret_dict["AR"] = np.mean(rec_list)
+            overall_ret[ap_iou_thresh] = ret_dict
+        return overall_ret
+
+    def __str__(self):
+        overall_ret = self.compute_metrics()
+        return self.metrics_to_str(overall_ret)
+
+    def metrics_to_str(self, overall_ret, per_class=True):
+        mAP_strs = []
+        AR_strs = []
+        per_class_metrics = []
+        for ap_iou_thresh in self.ap_iou_thresh:
+            mAP = overall_ret[ap_iou_thresh]["mAP"] * 100
+            mAP_strs.append(f"{mAP:.2f}")
+            ar = overall_ret[ap_iou_thresh]["AR"] * 100
+            AR_strs.append(f"{ar:.2f}")
+
+            if per_class:
+                # per-class metrics
+                per_class_metrics.append("-" * 5)
+                per_class_metrics.append(f"IOU Thresh={ap_iou_thresh}")
+                for x in list(overall_ret[ap_iou_thresh].keys()):
+                    if x == "mAP" or x == "AR":
+                        pass
+                    else:
+                        met_str = f"{x}: {overall_ret[ap_iou_thresh][x]*100:.2f}"
+                        per_class_metrics.append(met_str)
+
+        ap_header = [f"mAP{x:.2f}" for x in self.ap_iou_thresh]
+        ap_str = ", ".join(ap_header)
+        ap_str += ": " + ", ".join(mAP_strs)
+        ap_str += "\n"
+
+        ar_header = [f"AR{x:.2f}" for x in self.ap_iou_thresh]
+        ap_str += ", ".join(ar_header)
+        ap_str += ": " + ", ".join(AR_strs)
+
+        if per_class:
+            per_class_metrics = "\n".join(per_class_metrics)
+            ap_str += "\n"
+            ap_str += per_class_metrics
+
+        return ap_str
+
+    def metrics_to_dict(self, overall_ret):
+        metrics_dict = {}
+        for ap_iou_thresh in self.ap_iou_thresh:
+            metrics_dict[f"mAP_{ap_iou_thresh}"] = (
+                overall_ret[ap_iou_thresh]["mAP"] * 100
+            )
+            metrics_dict[f"AR_{ap_iou_thresh}"] = overall_ret[ap_iou_thresh]["AR"] * 100
+        return metrics_dict
+
+    def reset(self):
+        self.gt_map_cls = {}  # {scan_id: [(classname, bbox)]}
+        self.pred_map_cls = {}  # {scan_id: [(classname, bbox, score)]}
+        self.scan_cnt = 0
+
+
+class V2CDatasetConfig(object):
+    def __init__(self):
+        self.num_semcls = 18
+        self.num_angle_bin = 1
+        self.max_num_obj = 128
+
+        self.type2class = {
+            'cabinet':0, 'bed':1, 'chair':2, 'sofa':3, 'table':4, 'door':5,
+            'window':6,'bookshelf':7,'picture':8, 'counter':9, 'desk':10, 
+            'curtain':11, 'refrigerator':12, 'shower curtain':13, 'toilet':14, 
+            'sink':15, 'bathtub':16, 'others':17
+        }
+        self.class2type = {self.type2class[t]: t for t in self.type2class}
+        self.nyu40ids = np.array([
+            3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 
+            18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, 
+            32, 33, 34, 35, 36, 37, 38, 39, 40
+        ])
+        self.nyu40id2class = {
+            nyu40id: i for i, nyu40id in enumerate(list(self.nyu40ids))
+        }
+        self.nyu40id2class = self._get_nyu40id2class()
+
+    def _get_nyu40id2class(self):
+        lines = [line.rstrip() for line in open(os.path.join(DATASET_METADATA_DIR, 'scannetv2-labels.combined.tsv'))]
+        lines = lines[1:]
+        nyu40ids2class = {}
+        for i in range(len(lines)):
+            label_classes_set = set(self.type2class.keys())
+            elements = lines[i].split('\t')
+            nyu40_id = int(elements[4])
+            nyu40_name = elements[7]
+            if nyu40_id in self.nyu40ids:
+                if nyu40_name not in label_classes_set:
+                    nyu40ids2class[nyu40_id] = self.type2class["others"]
+                else:
+                    nyu40ids2class[nyu40_id] = self.type2class[nyu40_name]
+        return nyu40ids2class
+
+
+    def angle2class(self, angle):
+        raise ValueError("ScanNet does not have rotated bounding boxes.")
+
+    def class2anglebatch_tensor(self, pred_cls, residual, to_label_format=True):
+        zero_angle = torch.zeros(
+            (pred_cls.shape[0], pred_cls.shape[1]),
+            dtype=torch.float32,
+            device=pred_cls.device,
+        )
+        return zero_angle
+
+    def class2anglebatch(self, pred_cls, residual, to_label_format=True):
+        zero_angle = np.zeros(pred_cls.shape[0], dtype=np.float32)
+        return zero_angle
+
+    def param2obb(
+        self,
+        center,
+        heading_class,
+        heading_residual,
+        size_class,
+        size_residual,
+        box_size=None,
+    ):
+        heading_angle = self.class2angle(heading_class, heading_residual)
+        if box_size is None:
+            box_size = self.class2size(int(size_class), size_residual)
+        obb = np.zeros((7,))
+        obb[0:3] = center
+        obb[3:6] = box_size
+        obb[6] = heading_angle * -1
+        return obb
+
+    def box_parametrization_to_corners(self, box_center_unnorm, box_size, box_angle):
+        box_center_upright = flip_axis_to_camera_tensor(box_center_unnorm)
+        boxes = get_3d_box_batch_tensor(box_size, box_angle, box_center_upright)
+        return boxes
+
+    def box_parametrization_to_corners_np(self, box_center_unnorm, box_size, box_angle):
+        box_center_upright = flip_axis_to_camera_np(box_center_unnorm)
+        boxes = get_3d_box_batch_np(box_size, box_angle, box_center_upright)
+        return boxes
+
+    @staticmethod
+    def rotate_aligned_boxes(input_boxes, rot_mat):
+        centers, lengths = input_boxes[:, 0:3], input_boxes[:, 3:6]
+        new_centers = np.dot(centers, np.transpose(rot_mat))
+
+        dx, dy = lengths[:, 0] / 2.0, lengths[:, 1] / 2.0
+        new_x = np.zeros((dx.shape[0], 4))
+        new_y = np.zeros((dx.shape[0], 4))
+
+        for i, crnr in enumerate([(-1, -1), (1, -1), (1, 1), (-1, 1)]):
+            crnrs = np.zeros((dx.shape[0], 3))
+            crnrs[:, 0] = crnr[0] * dx
+            crnrs[:, 1] = crnr[1] * dy
+            crnrs = np.dot(crnrs, np.transpose(rot_mat))
+            new_x[:, i] = crnrs[:, 0]
+            new_y[:, i] = crnrs[:, 1]
+
+        new_dx = 2.0 * np.max(new_x, 1)
+        new_dy = 2.0 * np.max(new_y, 1)
+        new_lengths = np.stack((new_dx, new_dy, lengths[:, 2]), axis=1)
+
+        return np.concatenate([new_centers, new_lengths], axis=1)
+
+@TEST.register_module()
+class V2CDetTester(object):
+
+    def __init__(self, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+        super().__init__()
+        self.losses = losses 
+        self.test_min_iou = 0.50
+
+    def __call__(self, cfg, test_loader, model):
+        logger = get_root_logger()
+        model = model.eval()  # necessary!!
+        logger.info('>>>>>>>>>>>>>>>> Start Testing >>>>>>>>>>>>>>>>')
+
+        ap_calculator = V2CAPCalculator(
+            dataset_config=V2CDatasetConfig(),
+            ap_iou_thresh=[0.25, 0.5],
+            class2type_map=V2CDatasetConfig().class2type,
+            exact_eval=True,
+        )
+        
+        num_batches = len(test_loader)
+
+        for batch_idx, batch_data in enumerate(test_loader):
+            # note forward and compute loss
+            inputs = self._to_gpu(batch_data)
+            outputs = model(inputs, is_eval=True)
+
+            # Memory intensive as it gathers point cloud GT tensor across all ranks
+            ap_calculator.step_meter(
+                {'outputs': outputs}, 
+                inputs
+            )
+            
+            if curr_iter % 1 == 0:
+                mem_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
+                logout(
+                    f"Evaluate {epoch_str}; Batch [{curr_iter}/{num_batches}]; "
+                    f"Evaluating on iter: {curr_train_iter}; "
+                    f"Mem {mem_mb:0.2f}MB"
+            )
+
+        metrics = ap_calculator.compute_metrics()
+        metric_str = ap_calculator.metrics_to_str(metrics, per_class=True)
+
+        logger.info("==" * 10)
+        logger.info(f"{metric_str}")
+        logger.info("==" * 10)
+        
+        eval_metrics = {
+            metric + f'@{self.test_min_iou}': score \
+                for metric, score in metrics[self.test_min_iou].items()
+        }
+        
+        evaluator.print_stats()
+        logger.info('<<<<<<<<<<<<<<<<< End Testing <<<<<<<<<<<<<<<<<')
+    
+    def _to_gpu(self, data_dict):
+        if torch.cuda.is_available():
+            for key in data_dict:
+                if isinstance(data_dict[key], torch.Tensor):
+                    data_dict[key] = data_dict[key].cuda(non_blocking=True)
+        return data_dict
+
+    @staticmethod
+    def collate_fn(batch):
+        return collate_fn(batch)
+
 
 from tqdm import tqdm
 from multiprocessing import Pool

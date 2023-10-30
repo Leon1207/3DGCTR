@@ -15,20 +15,24 @@ import torch.nn.functional as F
 import torch.nn as nn
 from transformers import RobertaModel, RobertaTokenizerFast
 
+from .backbone_module import Pointnet2Backbone
 from .backbone_ptv2maxpool import PMBEMBAttn
+from .backbone_swin3d import Swin3DUNet
+from .backbone_spunet import SpUNetBase
 from .modules import (
     PointsObjClsModule, GeneralSamplingModule,
     ClsAgnosticPredictHead, PositionEmbeddingLearned
 )
 from .encoder_decoder_layers import (
-    BiEncoder, BiEncoderLayer, BiDecoderLayer
+    BiEncoder, SelfEncoderLayer, BiDecoderLayer
 )
+from torch_scatter import scatter_mean
+from .pointnet2 import pointnet2_utils
 from pointcept.models.builder import MODELS
-from pointcept.models.threedreftr.captioner_dcc.captioner import Captioner
 
 
-@MODELS.register_module("eda_ptv2_dc_nosem")
-class EDA_dc(nn.Module):
+@MODELS.register_module("3dreftr_selfattn")
+class ThreeDRefTR_SP_SelfAttn(nn.Module):
     """
     3D language grounder.
 
@@ -50,8 +54,8 @@ class EDA_dc(nn.Module):
                  input_feature_dim=3,
                  num_queries=256,
                  num_decoder_layers=6, self_position_embedding='loc_learned',
-                 contrastive_align_loss=False,
-                 d_model=288, butd=False, pointnet_ckpt=None, 
+                 contrastive_align_loss=True,
+                 d_model=288, butd=False, pointnet_ckpt=None,  # butd
                  data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
                  self_attend=True):
         """Initialize layers."""
@@ -60,9 +64,14 @@ class EDA_dc(nn.Module):
         self.num_queries = num_queries
         self.num_decoder_layers = num_decoder_layers
         self.self_position_embedding = self_position_embedding
+        self.contrastive_align_loss = contrastive_align_loss
+        self.butd = False  # debug
 
         # Visual encoder
-        self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)  # ptv2
+        # self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
+        self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)
+        # self.backbone_net = SpUNetBase(in_channels=input_feature_dim)
+        # self.backbone_net = Swin3DUNet(in_channels=input_feature_dim)
 
         if input_feature_dim == 3 and pointnet_ckpt is not None:
             self.backbone_net.load_state_dict(torch.load(
@@ -86,15 +95,43 @@ class EDA_dc(nn.Module):
             nn.Dropout(0.1)
         )
 
+        # Box encoder
+        if self.butd:
+            self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
+            saved_embeddings = torch.from_numpy(np.load(
+                '/userhome/lyd/3dvlm/data/class_embeddings3d.npy', allow_pickle=True
+            ))
+            self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
+            self.butd_class_embeddings.requires_grad = False
+            self.class_embeddings = nn.Linear(768, d_model - 128)
+            self.box_embeddings = PositionEmbeddingLearned(6, 128)
+
         # Cross-encoder
         self.pos_embed = PositionEmbeddingLearned(3, d_model)
-        bi_layer = BiEncoderLayer(
+        self_layer = SelfEncoderLayer(
             d_model, dropout=0.1, activation="relu",
             n_heads=8, dim_feedforward=256,
             self_attend_lang=self_attend, self_attend_vis=self_attend,
-            use_butd_enc_attn=False
+            use_butd_enc_attn=butd
         )
-        self.cross_encoder = BiEncoder(bi_layer, 3)
+        self.fuse_self_encoder = BiEncoder(self_layer, 3)
+
+        # Mask Feats Generation layer
+        self.x_mask = nn.Sequential(
+            nn.Conv1d(d_model, d_model * 2, 1), 
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model * 2, 1),
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model, 1)
+            )
+        self.x_query = nn.Sequential(
+            nn.Conv1d(d_model, d_model * 2, 1), 
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model * 2, 1),
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model, 1)
+            )
+        self.super_grouper = pointnet2_utils.QueryAndGroup(radius=0.2, nsample=2, use_xyz=False, normalize_xyz=True)
 
         # Query initialization
         self.points_obj_cls = PointsObjClsModule(d_model)
@@ -114,7 +151,7 @@ class EDA_dc(nn.Module):
             self.decoder.append(BiDecoderLayer(
                 d_model, n_heads=8, dim_feedforward=256,
                 dropout=0.1, activation="relu",
-                self_position_embedding=self_position_embedding, butd=False
+                self_position_embedding=self_position_embedding, butd=self.butd
             ))
 
         # Prediction heads
@@ -126,8 +163,22 @@ class EDA_dc(nn.Module):
                 compute_sem_scores=True
             ))
 
-        # Caption head
-        self.captioner = Captioner()
+        # Extra layers for contrastive losses
+        if contrastive_align_loss:
+            self.contrastive_align_projection_image = nn.Sequential(
+                nn.Linear(d_model, d_model),
+                nn.ReLU(),
+                nn.Linear(d_model, d_model),
+                nn.ReLU(),
+                nn.Linear(d_model, 64)
+            )
+            self.contrastive_align_projection_text = nn.Sequential(
+                nn.Linear(d_model, d_model),
+                nn.ReLU(),
+                nn.Linear(d_model, d_model),
+                nn.ReLU(),
+                nn.Linear(d_model, 64)
+            )
 
         # Init
         self.init_bn_momentum()
@@ -137,7 +188,7 @@ class EDA_dc(nn.Module):
     def _run_backbones(self, data_dict):
         """Run visual and text backbones."""
         # step 1. Visual encoder
-        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['source_xzy'].shape[0])
+        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['superpoint'].shape[0])
         end_points['seed_inds'] = end_points['fp2_inds']
         end_points['seed_xyz'] = end_points['fp2_xyz']
         end_points['seed_features'] = end_points['fp2_features']
@@ -179,6 +230,13 @@ class EDA_dc(nn.Module):
         end_points['query_points_feature'] = features  # (B, F, V)
         end_points['query_points_sample_inds'] = sample_inds  # (B, V)
         return end_points
+    
+    # segmentation prediction
+    def _seg_seeds_prediction(self, query, mask_feats, end_points, prefix=''):
+        ## generate seed points masks
+        pred_mask_seeds = torch.einsum('bnd,bdm->bnm', query, mask_feats)
+        ## mapping seed points masks to superpoints masks
+        return pred_mask_seeds
 
     # BRIEF forward.
     def forward(self, data_dict):
@@ -197,22 +255,31 @@ class EDA_dc(nn.Module):
         Returns:
             end_points: dict
         """
-
         # STEP 1. vision and text encoding
         end_points = self._run_backbones(data_dict)
         points_xyz = end_points['fp2_xyz']
         points_features = end_points['fp2_features']
         text_feats = end_points['text_feats']
         text_padding_mask = end_points['text_attention_mask']
-
-        superpoint = data_dict['superpoint'] 
-        end_points['superpoints'] = superpoint  # avoid bugs
         
-        detected_mask = None
-        detected_feats = None
+        # STEP 2. Box encoding
+        if self.butd:
+            # attend on those features
+            detected_mask = ~data_dict['det_bbox_label_mask']
 
-        # STEP 3. Cross-modality encoding
-        points_features, text_feats = self.cross_encoder(
+            # step box position.    det_boxes ([B, 132, 6]) -->  ([B, 128, 132])
+            box_embeddings = self.box_embeddings(data_dict['det_boxes'])
+            # step box class        det_class_ids ([B, 132])  -->  ([B, 132, 160])
+            class_embeddings = self.class_embeddings(self.butd_class_embeddings(data_dict['det_class_ids']))
+            # step box feature     ([B, 132, 288])
+            detected_feats = torch.cat([box_embeddings, class_embeddings.transpose(1, 2)]
+                                        , 1).transpose(1, 2).contiguous()
+        else:
+            detected_mask = None
+            detected_feats = None
+
+        # STEP 3. Concat features self-attention encoding
+        points_features, text_feats = self.fuse_self_encoder(
             vis_feats=points_features.transpose(1, 2).contiguous(),
             pos_feats=self.pos_embed(points_xyz).transpose(1, 2).contiguous(),
             padding_mask=torch.zeros(
@@ -228,6 +295,25 @@ class EDA_dc(nn.Module):
         points_features = points_features.contiguous()
         end_points["text_memory"] = text_feats
         end_points['seed_features'] = points_features
+        
+        # STEP 4. text projection --> 64
+        if self.contrastive_align_loss:
+            proj_tokens = F.normalize(
+                self.contrastive_align_projection_text(text_feats), p=2, dim=-1
+            )
+            end_points['proj_tokens'] = proj_tokens     # ([B, L, 64])
+
+        # STEP 4.1 Mask Feats Generation
+        mask_feats = self.x_mask(points_features).float()  # [B, 288, 1024]
+        superpoint = data_dict['superpoint']  # [B, 50000]
+        end_points['superpoints'] = superpoint
+        source_xzy = data_dict['source_xzy'].contiguous()  # [B, 50000, 3]
+        super_features = []
+        for bs in range(source_xzy.shape[0]):
+            super_xyz = scatter_mean(source_xzy[bs], superpoint[bs], dim=0).unsqueeze(0).float()  # [1, super_num, 3]
+            grouped_feature = self.super_grouper(points_xyz[bs].unsqueeze(0), super_xyz, mask_feats[bs].unsqueeze(0))  # [1, 288, super_num, nsample]
+            super_feature = F.max_pool2d(grouped_feature, kernel_size=[1, grouped_feature.size(3)]).squeeze(-1).squeeze(0)  # [288, super_num]
+            super_features.append(super_feature)
 
         # STEP 5. Query Points Generation
         end_points = self._generate_queries(
@@ -237,7 +323,12 @@ class EDA_dc(nn.Module):
         cluster_xyz = end_points['query_points_xyz']            # (B, V=256, 3)
         query = self.decoder_query_proj(cluster_feature)        
         query = query.transpose(1, 2).contiguous()              # (B, V=256, F=288)
-        
+        # projection 288 --> 64
+        if self.contrastive_align_loss: 
+            end_points['proposal_proj_queries'] = F.normalize(
+                self.contrastive_align_projection_image(query), p=2, dim=-1
+            )  # [B, 256, 64]
+
         # STEP 6.Proposals
         proposal_center, proposal_size = self.proposal_head(
             cluster_feature,
@@ -270,10 +361,18 @@ class EDA_dc(nn.Module):
                 text_feats, query_pos,
                 query_mask,
                 text_padding_mask,
-                detected_feats=None,
-                detected_mask=None
+                detected_feats=(
+                    detected_feats if self.butd
+                    else None
+                ),
+                detected_mask=detected_mask if self.butd else None
             )  # (B, V, F)
-            
+            # step project
+            if self.contrastive_align_loss:
+                end_points[f'{prefix}proj_queries'] = F.normalize(
+                    self.contrastive_align_projection_image(query), p=2, dim=-1
+                )
+
             # step box Prediction head
             base_xyz, base_size = self.prediction_heads[i](
                 query.transpose(1, 2).contiguous(),     # ([B, F=288, V=256])
@@ -283,22 +382,45 @@ class EDA_dc(nn.Module):
             )
             base_xyz = base_xyz.detach().clone()
             base_size = base_size.detach().clone()
+
             query_last = query
 
-        # caption head
-        end_points['reference_tokens'] = data_dict['reference_tokens']
-        end_points['reference_masks'] = data_dict['reference_masks']
-        end_points['query_last'] = query_last
-        cls_prob = F.softmax(end_points['last_sem_cls_scores'], dim=-1)
-        end_points['objectness_prob'] = 1 - cls_prob[..., -1]
-        if self.training:
-            outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
-                self.captioner(end_points, data_dict, is_eval=False)
-            end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
-            end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
-        else:
-            lang_cap = self.captioner(end_points, data_dict, is_eval=True)
-            end_points['lang_cap'] = lang_cap
+        # step Seg Prediction head
+        query_last = self.x_query(query_last.transpose(1, 2)).transpose(1, 2)
+        pred_masks = []
+        for bs in range(query.shape[0]):
+            pred_mask = self._seg_seeds_prediction(
+                query_last[bs].unsqueeze(0),                                  # ([1, F=256, V=288])
+                super_features[bs].unsqueeze(0),                             # ([1, F=288, V=super_num])
+                end_points=end_points,  # 
+                prefix=prefix
+            ).squeeze(0)  
+            pred_masks.append(pred_mask)
+
+        end_points['last_pred_masks'] = pred_masks  # [B, 256, super_num]
+
+        # debug
+        # wordidx = np.array([
+        #     0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
+        #     12, 13, 13, 14, 15, 16, 16, 17, 17, 18, 18
+        # ])  # 18+1（not mentioned）
+        # tokenidx = np.array([
+        #     1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
+        #     25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 42, 44, 45
+        # ])  # 18 token span
+        # proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
+        # proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
+        # sem_scores = torch.matmul(proj_queries, proj_tokens.transpose(-1, -2))
+        # sem_scores_ = sem_scores / 0.07  # (B, Q, tokens)
+        # sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)
+        # sem_scores = sem_scores.to(sem_scores_.device)
+        # sem_scores[:, :sem_scores_.size(1), :sem_scores_.size(2)] = sem_scores_
+
+        # sem_cls = torch.zeros_like(sem_scores)[..., :19] # ([B, 256, 19])
+        # for w, t in zip(wordidx, tokenidx):
+        #     sem_cls[..., w] += sem_scores[..., t]
+
+        # class_id = sem_cls.argmax(-1)
 
         return end_points
 

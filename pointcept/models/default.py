@@ -139,7 +139,9 @@ class DefaultCaptioner(nn.Module):
             "size_gts": input_dict['size_gts'],
             "sem_cls_label": input_dict['sem_cls_label'],
             "superpoint": input_dict['superpoint'],
-            "positive_map": input_dict['positive_map']
+            "positive_map": input_dict['positive_map'],
+            "scan_idx": input_dict['scan_idx'],
+            "gt_box_object_ids": input_dict['gt_box_object_ids']
         }     
         # inputs.update(input_dict)  # debug
         end_points = self.backbone(inputs)
@@ -150,8 +152,11 @@ class DefaultCaptioner(nn.Module):
             end_points, 6,
             self.set_criterion,
             query_points_obj_topk=5
-        )
-            return dict(loss=loss, caption_loss=end_points['loss_caption'])
+        )   
+            if 'scst' in end_points.keys():
+                return dict(loss=loss, loss_scst=end_points['loss_scst'])
+            else:
+                return dict(loss=loss, caption_loss=end_points['loss_caption'])
         # eval
         else:
             self.set_criterion.eval()
@@ -197,46 +202,48 @@ class DebugCaptioner(nn.Module):
             return end_points
 
 
-# @MODELS.register_module()
-# class DefaultOnlyCaptioner(nn.Module):
-#     def __init__(self, 
-#                  backbone=None, 
-#                  losses=['boxes', 'labels', 'contrastive_align', 'masks']):
-#         super().__init__()
-#         self.backbone = build_model(backbone)
+@MODELS.register_module()
+class DefaultOnlyCaptioner(nn.Module):
+    def __init__(self, 
+                 backbone=None, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
+        super().__init__()
+        self.backbone = build_model(backbone)
 
-#     def forward(self, input_dict):
+    def forward(self, input_dict):
 
-#         inputs = {
-#             'point_clouds': input_dict['point_clouds'].float(), 
-#             'text': input_dict['utterances'],                   
-#             "det_boxes": input_dict['all_detected_boxes'],      
-#             "det_bbox_label_mask": input_dict['all_detected_bbox_label_mask'],  
-#             "det_class_ids": input_dict['all_detected_class_ids'],   
-#             "offset": input_dict['offset'],
-#             "source_xzy": input_dict['source_xzy'],
-#             "reference_tokens": input_dict['reference_tokens'],
-#             "reference_masks": input_dict['reference_masks'],
-#             "box_label_mask": input_dict['box_label_mask'],
-#             "center_label": input_dict['center_label'],
-#             "size_gts": input_dict['size_gts'],
-#             "sem_cls_label": input_dict['sem_cls_label'],
-#             "superpoint": input_dict['superpoint'],
-#         }    
+        inputs = {
+            'point_clouds': input_dict['point_clouds'].float(), 
+            'text': input_dict['utterances'],                   
+            "det_boxes": input_dict['all_detected_boxes'],      
+            "det_bbox_label_mask": input_dict['all_detected_bbox_label_mask'],  
+            "det_class_ids": input_dict['all_detected_class_ids'],   
+            "offset": input_dict['offset'],
+            "source_xzy": input_dict['source_xzy'],
+            "reference_tokens": input_dict['reference_tokens'],
+            "reference_masks": input_dict['reference_masks'],
+            "box_label_mask": input_dict['box_label_mask'],
+            "center_label": input_dict['center_label'],
+            "size_gts": input_dict['size_gts'],
+            "sem_cls_label": input_dict['sem_cls_label'],
+            "superpoint": input_dict['superpoint'],
+            "positive_map": input_dict['positive_map']
+        }     
 
-#         end_points = self.backbone(inputs)
+        end_points = self.backbone(inputs)
+        end_points.update(input_dict)
 
-#         # train
-#         if self.training:
-#             loss_config = {'reduction': 'none', 'ignore_index': 0}
-#             nvocabs = 3433  # lenght of tokneizer
-#             o = end_points["caption_logits"][0]
-#             t = end_points['caption_target']
-#             loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config).reshape(t.shape)  
-#             loss = torch.sum(loss_per_word * (t != 0).float()) / torch.sum(
-#                 torch.sum(t != 0).float() + 1e-6
-#             )
-#             return dict(loss=loss)
-#         # eval
-#         else:
-#             return end_points
+        # train
+        if self.training:
+            loss_config = {'reduction': 'none', 'ignore_index': 0}
+            nvocabs = 3433  # lenght of tokneizer
+            o = end_points["caption_logits"][0]
+            t = end_points['caption_target']
+            loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config).reshape(t.shape)  
+            loss = torch.sum(loss_per_word * (t != 0).float()) / torch.sum(
+                torch.sum(t != 0).float() + 1e-6
+            )
+            return dict(loss=loss)
+        # eval
+        else:
+            return end_points

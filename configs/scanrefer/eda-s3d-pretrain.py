@@ -1,6 +1,6 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 80 # bs: total bs in all gpus  108
+batch_size = 80 # bs: total bs in all gpus  80
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
@@ -14,14 +14,14 @@ model = dict(
     type="DefaultGrounder",
     backbone=dict(
         type="eda_ptv2_dets3d",
-        butd="False"  # not used butd
+        butd=False  # not used butd
     ),
     losses=['boxes', 'labels', 'contrastive_align']
 )
 
 # scheduler settings
-epoch = 100
-eval_epoch = 100
+epoch = 200
+eval_epoch = 200
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 

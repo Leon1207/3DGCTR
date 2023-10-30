@@ -55,7 +55,7 @@ class ThreeDRefTR_SP(nn.Module):
                  num_queries=256,
                  num_decoder_layers=6, self_position_embedding='loc_learned',
                  contrastive_align_loss=True,
-                 d_model=288, butd=True, pointnet_ckpt=None,  # butd
+                 d_model=288, butd=False, pointnet_ckpt=None,  # butd
                  data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
                  self_attend=True):
         """Initialize layers."""
@@ -65,7 +65,7 @@ class ThreeDRefTR_SP(nn.Module):
         self.num_decoder_layers = num_decoder_layers
         self.self_position_embedding = self_position_embedding
         self.contrastive_align_loss = contrastive_align_loss
-        self.butd = butd
+        self.butd = False  # debug
 
         # Visual encoder
         # self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
@@ -385,31 +385,6 @@ class ThreeDRefTR_SP(nn.Module):
 
             query_last = query
 
-        # wordidx = np.array([
-        #     0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
-        #     12, 13, 13, 14, 15, 16, 16, 17, 17, 18, 18
-        # ])  # 18+1（not mentioned）
-        # tokenidx = np.array([
-        #     1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
-        #     25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 42, 44, 45
-        # ])  # 18 token span
-
-        # proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
-        # proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
-        # sem_scores = torch.matmul(proj_queries, proj_tokens.transpose(-1, -2))
-        # sem_scores_ = sem_scores / 0.07  # (B, Q, tokens)
-        # sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)
-        # sem_scores = sem_scores.to(sem_scores_.device)
-        # sem_scores[:, :sem_scores_.size(1), :sem_scores_.size(2)] = sem_scores_
-
-        # sem_cls = torch.zeros_like(sem_scores)[..., :19] # ([B, 256, 19])
-        # for w, t in zip(wordidx, tokenidx):
-        #     sem_cls[..., w] += sem_scores[..., t]
-        # sem_scores = sem_cls
-        # class_id = sem_scores.argmax(-1)
-        # for b in range(class_id.shape[0]):
-        #     print(class_id[b])  # debug
-
         # step Seg Prediction head
         query_last = self.x_query(query_last.transpose(1, 2)).transpose(1, 2)
         pred_masks = []
@@ -423,6 +398,29 @@ class ThreeDRefTR_SP(nn.Module):
             pred_masks.append(pred_mask)
 
         end_points['last_pred_masks'] = pred_masks  # [B, 256, super_num]
+
+        # debug
+        # wordidx = np.array([
+        #     0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
+        #     12, 13, 13, 14, 15, 16, 16, 17, 17, 18, 18
+        # ])  # 18+1（not mentioned）
+        # tokenidx = np.array([
+        #     1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
+        #     25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 42, 44, 45
+        # ])  # 18 token span
+        # proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
+        # proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
+        # sem_scores = torch.matmul(proj_queries, proj_tokens.transpose(-1, -2))
+        # sem_scores_ = sem_scores / 0.07  # (B, Q, tokens)
+        # sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)
+        # sem_scores = sem_scores.to(sem_scores_.device)
+        # sem_scores[:, :sem_scores_.size(1), :sem_scores_.size(2)] = sem_scores_
+
+        # sem_cls = torch.zeros_like(sem_scores)[..., :19] # ([B, 256, 19])
+        # for w, t in zip(wordidx, tokenidx):
+        #     sem_cls[..., w] += sem_scores[..., t]
+
+        # class_id = sem_cls.argmax(-1)
 
         return end_points
 

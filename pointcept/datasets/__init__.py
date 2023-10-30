@@ -3,6 +3,7 @@ from .defaults import DefaultDataset, ConcatDataset
 from .s3dis import S3DISDataset
 from .scannet import ScanNetDataset, ScanNet200Dataset
 from .scanrefer import Joint3DDataset
+from .scanrefer_v2c import Joint3DDataset_v2c
 from .scanrefer_jointdc_v2c import Joint3DDataset_JointDC_v2c
 from .scanrefer_pretrain import Joint3DDataset_Pretrain
 from .scanrefer_jointdc import Joint3DDataset_JointDC

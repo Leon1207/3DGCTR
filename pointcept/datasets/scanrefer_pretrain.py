@@ -30,9 +30,9 @@ from .transform import Compose, TRANSFORMS
 
 import copy
 
-from .preprocessing.scanrefer.model_util_scannet import ScannetDatasetConfig
+from .preprocessing.scanrefer.model_util_scannet_v2c import ScannetDatasetConfig_V2C
 from .preprocessing.scanrefer.scannet_utils import read_label_mapping
-from .preprocessing.scanrefer.visual_data_handlers import Scan, S3D
+from .preprocessing.scanrefer.visual_data_handlers import Scan, S3D, S3DView
 from .preprocessing.scanrefer.scannet_classes import REL_ALIASES, VIEW_DEP_RELS
 import wandb
 from typing import List, Dict
@@ -44,8 +44,8 @@ sys.path.append(os.getcwd())
 from .preprocessing.scanrefer import sng_parser
 
 NUM_CLASSES = 485
-DC = ScannetDatasetConfig(NUM_CLASSES)
-DC18 = ScannetDatasetConfig(18)
+DC = ScannetDatasetConfig_V2C(NUM_CLASSES)
+DC18 = ScannetDatasetConfig_V2C(18)
 MAX_NUM_OBJ = 132
 
 
@@ -141,35 +141,41 @@ class Joint3DDataset_Pretrain(Dataset):
         self.annos = []
 
         # using for processing datasets and save pkl for each scene_room
-        # s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}'
-        # total = 3000 if split == 'train' else 250
-        # for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
-        #     print("Process: {}/{}".format(cnt, total))
-        #     for filename in filenames:
-        #         scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[-1].split('.')[0]
-        #         self.s3ds[scene_id] = ""
-        #         scan = S3D(scene_id, s3d_data_path)
-        #         keep = np.array([
-        #             self.label_map[
-        #                 scan.get_object_instance_label(ind)
-        #             ] in DC.nyu40id2class
-        #             for ind in range(len(scan.three_d_objects))
-        #         ])
-        #         if keep.any():
-        #             self.annos.append({
-        #                 'scan_id': scene_id,
-        #                 'target_id': [],
-        #                 'distractor_ids': [],
-        #                 'utterance': '',
-        #                 'target': [],
-        #                 'anchors': [],
-        #                 'anchor_ids': [],
-        #                 'dataset': 'structured3d'
-        #             })
-        #             pkl_name = scene_id + ".pkl"
-        #             save_dict = {scene_id: scan}
-        #             pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + pkl_name, save_dict)
+        s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}'
+        total = 3000 if split == 'train' else 250
+        for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
+            print("Process: {}/{}".format(cnt, total))
+            for filename in filenames:
+                scene_id = dirpath.split('/')[-1].split('_')[-1] + '_' + filename.split('_')[1] + '_' + filename.split('_')[2].split('.')[0]
+                scan = S3DView(scene_id, s3d_data_path)
 
+                keep = np.where(np.array([
+                    self.label_map18[
+                        scan.get_object_instance_label(ind)
+                    ] in DC18.nyu40id2class
+                    for ind in range(len(scan.three_d_objects))
+                ])[:MAX_NUM_OBJ])[0].tolist()
+
+                if len(keep) > 0:
+                    self.annos.append({
+                        'scan_id': scene_id,
+                        'target_id': [],
+                        'distractor_ids': [],
+                        'utterance': '',
+                        'target': [],
+                        'anchors': [],
+                        'anchor_ids': [],
+                        'dataset': 'structured3d'
+                    })
+                    pkl_name = scene_id + ".pkl"
+                    save_dict = {scene_id: scan}
+                    pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + pkl_name, save_dict)
+
+                else:
+                    print("Fliter scene: ", scene_id.split(".")[0])
+
+        print("Finished.")
+        
         # using for myself with 10 train set split scene lists
         # s3d_pkl_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/'
         # for cnt in range(1, 11):
@@ -193,33 +199,34 @@ class Joint3DDataset_Pretrain(Dataset):
         #     pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_scene_pkl/' + key + ".pkl", save_dict)
 
         # using after processing, loading each annos and filter invalid scene
-        lis_dir = os.listdir(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/')
-        for cnt, scene_id in enumerate(lis_dir):
-            if cnt % 1000 == 0:
-                print("Filter process: {}/{}".format(cnt, len(lis_dir)))
-            scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + scene_id)
-            scan = list(scan)[0][scene_id.split(".")[0]]
+        # use_pano_psrp = "Only_view"
+        # lis_dir = os.listdir(f'/userhome/lyd/Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/')
+        # for cnt, scene_id in enumerate(lis_dir):
+        #     if cnt % 1000 == 0:
+        #         print("Filter process: {}/{}".format(cnt, len(lis_dir)))
+        #     scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/' + scene_id)
+        #     scan = list(scan)[0][scene_id.split(".")[0]]
 
-            keep = np.where(np.array([
-                    self.label_map18[
-                        scan.get_object_instance_label(ind)
-                    ] in DC18.nyu40id2class
-                    for ind in range(len(scan.three_d_objects))
-                ])[:MAX_NUM_OBJ])[0].tolist()
+        #     keep = np.where(np.array([
+        #             self.label_map18[
+        #                 scan.get_object_instance_label(ind)
+        #             ] in DC18.nyu40id2class
+        #             for ind in range(len(scan.three_d_objects))
+        #         ])[:MAX_NUM_OBJ])[0].tolist()
 
-            if len(keep) > 0:
-                self.annos.append({
-                    'scan_id': scene_id.split(".")[0],
-                    'target_id': [],
-                    'distractor_ids': [],
-                    'utterance': '',
-                    'target': [],
-                    'anchors': [],
-                    'anchor_ids': [],
-                    'dataset': 'structured3d'
-                })
-            else:
-                print("Fliter scene: ", scene_id.split(".")[0])
+        #     if len(keep) > 0:
+        #         self.annos.append({
+        #             'scan_id': scene_id.split(".")[0],
+        #             'target_id': [],
+        #             'distractor_ids': [],
+        #             'utterance': '',
+        #             'target': [],
+        #             'anchors': [],
+        #             'anchor_ids': [],
+        #             'dataset': 'structured3d'
+        #         })
+        #     else:
+        #         print("Fliter scene: ", scene_id.split(".")[0])
 
             # self.annos = self.annos[:100]  # debug
             
@@ -240,11 +247,17 @@ class Joint3DDataset_Pretrain(Dataset):
             ret = [DC.class2type[DC.nyu40id2class[i]] for i in sampled_classes]
             random.shuffle(ret)
         else:
+            # ret = [
+            #     'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+            #     'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
+            #     'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
+            #     'other furniture'
+            # ]
             ret = [
-                'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+                'cabinet', 'bed', 'chair', 'sofa', 'table', 'door',
                 'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
                 'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-                'other furniture'
+                'others'
             ]
         return ret
 
@@ -262,11 +275,17 @@ class Joint3DDataset_Pretrain(Dataset):
             ret = [DC.class2type[DC.nyu40id2class[i]] for i in sampled_classes]
             random.shuffle(ret)
         else:
+            # ret = [
+            #     'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+            #     'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
+            #     'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
+            #     'other furniture'
+            # ]
             ret = [
-                'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+                'cabinet', 'bed', 'chair', 'sofa', 'table', 'door',
                 'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
                 'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-                'other furniture'
+                'others'
             ]
         return ret
     
@@ -741,7 +760,7 @@ class Joint3DDataset_Pretrain(Dataset):
 
         # step Read annotation and point clouds
         anno = self.annos[index]
-        scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
+        scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
         scan = list(scan)[0][anno['scan_id']]
         scan.pc = np.copy(scan.orig_pc)
         superpoint = torch.zeros((1))  # avoid bugs
@@ -782,7 +801,8 @@ class Joint3DDataset_Pretrain(Dataset):
                     if self.label_map18[
                         scan.get_object_instance_label(ind)
                     ] != 39
-                    else 'other furniture'
+                    # else 'other furniture'
+                    else 'others'
                     for ind in anno['target_id']
                 ]
             else:
@@ -898,10 +918,10 @@ class Joint3DDataset_Pretrain(Dataset):
                             [
                                 {
                                     "corners": c.tolist(),
-                                    "label": "target",
+                                    "label": anno['target'][idx],
                                     "color": [0, 255, 0]
                                 }
-                                for c in gt_box
+                                for idx, c in enumerate(gt_box[:len(anno['target'])])
                             ]
                         )
                     }),

@@ -25,6 +25,7 @@ from .encoder_decoder_layers import (
 )
 from pointcept.models.builder import MODELS
 from pointcept.models.threedreftr.captioner_dcc.captioner import Captioner
+from pointcept.models.threedreftr.captioner_dcc.scst import SCST_Training
 
 
 @MODELS.register_module("eda_ptv2_dc")
@@ -51,7 +52,7 @@ class EDA_dc(nn.Module):
                  num_queries=256,
                  num_decoder_layers=6, self_position_embedding='loc_learned',
                  contrastive_align_loss=True,
-                 d_model=288, butd=False, pointnet_ckpt=None, 
+                 d_model=288, butd=False, pointnet_ckpt=None, scst=False,
                  data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
                  self_attend=True):
         """Initialize layers."""
@@ -145,7 +146,9 @@ class EDA_dc(nn.Module):
             )
 
         # Caption head
-        self.captioner = Captioner()
+        self.captioner = Captioner(scst=scst)
+        self.scst_trainging = scst  # scst
+        self.scst_model = SCST_Training()
 
         # Init
         self.init_bn_momentum()
@@ -327,10 +330,16 @@ class EDA_dc(nn.Module):
         cls_prob = F.softmax(end_points['last_sem_cls_scores'], dim=-1)
         end_points['objectness_prob'] = 1 - cls_prob[..., -1]
         if self.training:
-            outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
-                self.captioner(end_points, data_dict, is_eval=False)
-            end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
-            end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
+            if self.scst_trainging:
+                greedy_caption, beam_caption, data_dict, assignments =\
+                    self.captioner(end_points, data_dict, is_eval=False)
+                scst_loss = self.scst_model(greedy_caption, beam_caption, data_dict, assignments)
+                end_points['scst'] = 5 * scst_loss
+            else:
+                outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
+                    self.captioner(end_points, data_dict, is_eval=False)
+                end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
+                end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
         else:
             lang_cap = self.captioner(end_points, data_dict, is_eval=True)
             end_points['lang_cap'] = lang_cap

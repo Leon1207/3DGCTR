@@ -2,30 +2,26 @@ _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
 # bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
 
-batch_size = 6 
-batch_size_val = 6
-batch_size_test = 6
-
-# batch_size = 64
-# batch_size_val = 16
-# batch_size_test = 16
+batch_size = 1 
+batch_size_val = 1
+batch_size_test = 1
 
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
 eval_freq = 20
 find_unused_parameters = True
-weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"  # dense caption loss
 
 # model settings
 model = dict(
     type="DefaultCaptioner",
     backbone=dict(
-        type="eda_ptv2_dc_nosem",
-        butd="False",  # not used butd
-        contrastive_align_loss="False"
+        type="eda_ptv2_dc",
+        butd=False,  # not used butd
+        scst=True
     ),
-    losses=['boxes', 'labels', 'captions']
+    losses=['boxes', 'labels', 'contrastive_align', 'scst']
 )
 
 # scheduler settings
@@ -43,7 +39,7 @@ hooks = [
     # dict(type="CheckpointLoader"),  # multi gpus
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'captions']),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'scst']),
     dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False)
 ]
@@ -150,6 +146,6 @@ data = dict(
 # tester
 test = dict(
     type="DetTester",
-    losses=['boxes', 'labels', 'captions']
+    losses=['boxes', 'labels', 'contrastive_align', 'scst']
 )
 

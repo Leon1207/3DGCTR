@@ -3,7 +3,88 @@ import torch
 from torch import nn, Tensor
 from pointcept.models.threedreftr.captioner_dcc.cider_scorer import Cider
 from collections import defaultdict, OrderedDict
+from typing import List, Dict
 
+
+DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'  # modify
+SCANREFER = {
+    'language': {
+        'train': json.load(
+            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_train.json"), "r")
+        ),
+        'val': json.load(
+            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_val.json"), "r")
+        )
+    },
+    'scene_list': {
+        'train': open(os.path.join(
+            DATA_ROOT, 'ScanRefer_filtered_train.txt'
+        ), 'r').read().split(),
+        'val': open(os.path.join(
+            DATA_ROOT, 'ScanRefer_filtered_val.txt'
+        ), 'r').read().split()
+    },
+    'vocabulary': json.load(
+        open(os.path.join(DATA_ROOT, "ScanRefer_vocabulary.json"), "r")
+    )
+}
+
+class ScanReferTokenizer:
+    def __init__(self, word2idx: Dict):
+        self.word2idx = {word: int(index) for word, index in word2idx.items()}
+        self.idx2word = {int(index): word for word, index in word2idx.items()}
+        
+        self.pad_token = None
+        self.bos_token = 'sos'
+        self.bos_token_id = word2idx[self.bos_token]
+        self.eos_token = 'eos'
+        self.eos_token_id = word2idx[self.eos_token]
+        
+    def __len__(self) -> int: return len(self.word2idx)
+    
+    def __call__(self, token: str) -> int: 
+        token = token if token in self.word2idx else 'unk'
+        return self.word2idx[token]
+    
+    def encode(self, sentence: str) -> List:
+        if not sentence: 
+            return []
+        return [self(word) for word in sentence.split(' ')]
+    
+    def batch_encode_plus(
+        self, sentences: List[str], max_length: int=None, **tokenizer_kwargs: Dict
+    ) -> Dict:
+        
+        raw_encoded = [self.encode(sentence) for sentence in sentences]
+        
+        if max_length is None:  # infer if not presented
+            max_length = max(map(len, raw_encoded))
+            
+        token = np.zeros((len(raw_encoded), max_length))
+        masks = np.zeros((len(raw_encoded), max_length))
+        
+        for batch_id, encoded in enumerate(raw_encoded):
+            length = min(len(encoded), max_length)
+            if length > 0:
+                token[batch_id, :length] = encoded[:length]
+                masks[batch_id, :length] = 1
+        
+        if tokenizer_kwargs['return_tensors'] == 'pt':
+            token, masks = torch.from_numpy(token), torch.from_numpy(masks)
+        
+        return {'input_ids': token, 'attention_mask': masks}
+    
+    def decode(self, tokens: List[int]) -> List[str]:
+        out_words = []
+        for token_id in tokens:
+            if token_id == self.eos_token_id: 
+                break
+            out_words.append(self.idx2word[token_id])
+        return ' '.join(out_words)
+    
+    def batch_decode(self, list_tokens: List[int], **kwargs) -> List[str]:
+        return [self.decode(tokens) for tokens in list_tokens]
+    
 
 def proposal_dimension_select(features: Tensor, indices: Tensor) -> Tensor:
     '''
@@ -30,16 +111,17 @@ def proposal_dimension_select(features: Tensor, indices: Tensor) -> Tensor:
         )
     )
 
+
             
 class SCST_Training(nn.Module):
     
     def __init__(self):
         super().__init__()
         
-        dataset = importlib.import_module(f'datasets.{args.dataset}')
-        self.scan_list = dataset.SCANREFER['scene_list']['train']
-        self.scanrefer = dataset.SCANREFER['language']['train']
-        
+        self.scan_list = SCANREFER['scene_list']['train']
+        self.scanrefer = SCANREFER['language']['train']
+        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_scst_result"  # modify
+
         print('preparing N-Grams in Cider Scorer')
         self.gathered_scanrefer = self.preprocess_and_gather_language()
         
@@ -48,13 +130,13 @@ class SCST_Training(nn.Module):
             for scene_id, scene_annotation in self.gathered_scanrefer.items() \
                 for instance_id, instance_annotation in scene_annotation.items()
         })
-        with open(os.path.join(args.checkpoint_dir, 'train_corpus.json'), 'w') as f:
+        with open(os.path.join(self.checkpoint_dir, 'train_corpus.json'), 'w') as f:
             json.dump(gathered_corpus, f, indent=4)
         
         self.rewarder = Cider(gathered_corpus)
         
-        ScanReferTokenizer = dataset.ScanReferTokenizer
-        self.tokenizer = ScanReferTokenizer(dataset.vocabulary['word2idx'])
+        vocabulary = SCANREFER['vocabulary']
+        self.tokenizer = ScanReferTokenizer(vocabulary['word2idx'])
     
     
     def preprocess_and_gather_language(self):

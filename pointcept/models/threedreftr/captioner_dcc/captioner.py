@@ -9,7 +9,6 @@ from transformers import GPT2Config, GPT2LMHeadModel
 
 from pointcept.models.threedreftr.captioner_dcc.helper import Matcher
 from pointcept.models.threedreftr.captioner_dcc.generation_utils import generation
-from pointcept.models.threedreftr.captioner_dcc.scst import SCST_Training
 from pointcept.datasets.scanrefer_jointdc import SCANREFER, ScanReferTokenizer
 from pointcept.models.losses.vqa_losses import generalized_box_iou3d, box_cxcyczwhd_to_xyzxyz
 import wandb
@@ -109,14 +108,13 @@ def position_embedding(max_len: int, d_model: int) -> Tensor:
 
 class Captioner(nn.Module):
 
-    def __init__(self):
+    def __init__(self, scst=False):
         super(Captioner, self).__init__()
         
         self.embedding_size = 256
         self.max_positions = 64
         self.max_des_len = 32
         self.use_beam_search = True
-        self.use_scst = False  # debug
         
         ## initialize tokenizer for batch decoding
         self.tokenizer = ScanReferTokenizer(SCANREFER['vocabulary']['word2idx'])
@@ -165,8 +163,7 @@ class Captioner(nn.Module):
             'num_beams': 5 if self.use_beam_search is True else None,
         }
         
-        # self.scst = SCST_Training(args)  debug
-        self.use_scst = hasattr(self, 'use_scst') and self.use_scst is True
+        self.use_scst = scst
         self.scst_max_des_per_iter = 32
     
     
@@ -306,14 +303,14 @@ class Captioner(nn.Module):
         return outputs, prefix_tokens, annotated_proposal, gt_box_cap_label
     
     
-    def forward_scst(self, detector_output: Dict, inputs: Dict) -> Dict:
+    def forward_scst(self, end_points: Dict, data_dict: Dict) -> Dict:
         
         # get word embeddings, NOTE: captioner does not predict <bos> token
-        caption_ids = inputs['reference_tokens']    # batch x MAX_NUM_OBJ x ntokens
+        caption_ids = end_points['reference_tokens']    # batch x MAX_NUM_OBJ x ntokens
         
         # ---- match proposal bounding boxes with ground truth inds
         assignments = hungarian_matching(
-            self.matcher, detector_output, inputs
+            self.matcher, end_points, data_dict
         )
         
         # ---- generate caption labels for rnn model
@@ -340,14 +337,14 @@ class Captioner(nn.Module):
         assignments['annotated_proposal'] = annotated_proposal
         
         # generation with greedy search
-        prefix_tokens = detector_output['object_features']
+        prefix_tokens = end_points['object_features']
         
         greedy_caption = generation(
             self.transformer, 
             inputs_embeds=prefix_tokens[annotated_proposal == 1],
             encoder_hidden_states=\
-                None if detector_output.get('encoder_hidden_states', None) is None else \
-                    detector_output['encoder_hidden_states'][annotated_proposal == 1],
+                None if end_points.get('encoder_hidden_states', None) is None else \
+                    end_points['encoder_hidden_states'][annotated_proposal == 1],
             early_stopping = True,
             eos_token_id = self.tokenizer.eos_token_id,
             num_beams = None,
@@ -357,14 +354,12 @@ class Captioner(nn.Module):
             self.transformer, 
             inputs_embeds=prefix_tokens[annotated_proposal == 1],
             encoder_hidden_states=\
-                None if detector_output.get('encoder_hidden_states', None) is None else \
-                    detector_output['encoder_hidden_states'][annotated_proposal == 1],
+                None if end_points.get('encoder_hidden_states', None) is None else \
+                    end_points['encoder_hidden_states'][annotated_proposal == 1],
             **self.caption_config
         )
-        scst_loss = self.scst(greedy_caption, beam_caption, inputs, assignments)
-        detector_output['loss'] += 5 * scst_loss
         
-        return detector_output
+        return greedy_caption, beam_caption, data_dict, assignments
     
     
     def forward_evaluation(self, detector_output: Dict, inputs: Dict) -> Dict:

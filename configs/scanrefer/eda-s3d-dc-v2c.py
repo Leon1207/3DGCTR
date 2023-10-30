@@ -15,14 +15,15 @@ enable_amp = True
 num_worker = 4
 eval_freq = 20
 find_unused_parameters = True
-weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+# weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_v2c/model/model_best.pth"
 
 # model settings
 model = dict(
     type="DefaultCaptioner",
     backbone=dict(
         type="eda_ptv2_dc",
-        butd="False"  # not used butd
+        butd=False  # not used butd
     ),
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )

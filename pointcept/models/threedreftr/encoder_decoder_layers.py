@@ -254,6 +254,75 @@ class BiEncoderLayer(nn.Module):
 
         return vis_feats, text_feats
 
+class SelfEncoderLayer(nn.Module):
+    """Self->cross layer for both modalities."""
+
+    def __init__(self, d_model=256, dropout=0.1, activation="relu", n_heads=8,
+                 dim_feedforward=256,
+                 self_attend_lang=True, self_attend_vis=True,
+                 use_butd_enc_attn=False):
+        """Initialize layers, d_model is the encoder dimension."""
+        super().__init__()
+
+        # self attention in language
+        if self_attend_lang:
+            self.self_attention_lang = TransformerEncoderLayerNoFFN(
+                d_model=d_model,
+                nhead=n_heads,
+                dropout=dropout
+            )
+        else:
+            self.self_attention_lang = None
+
+        # self attention in vision
+        if self_attend_vis:
+            self.self_attention_visual = PosTransformerEncoderLayerNoFFN(
+                d_model=d_model,
+                nhead=n_heads,
+                dropout=dropout
+            )
+        else:
+            self.self_attention_visual = None
+
+        # cross attention in language and vision
+        self.fuse_self_attention_layer = TransformerEncoderLayerNoFFN(
+            d_model=d_model, nhead=n_heads, dropout=dropout
+        )
+    
+    def forward(self, vis_feats, pos_feats, padding_mask, text_feats,
+                text_padding_mask, end_points={}, detected_feats=None,
+                detected_mask=None):
+        """Forward pass, feats (B, N, F), masks (B, N), diff N for V/L."""
+        K = vis_feats.shape[1]  # 1024
+        
+        # STEP 1. Self attention for vision
+        if self.self_attention_visual is not None:
+            vis_feats = self.self_attention_visual(
+                vis_feats.transpose(0, 1),
+                pos_feats.transpose(0, 1),
+                src_key_padding_mask=padding_mask
+            ).transpose(0, 1)
+
+        # STEP 2. Self attention for language
+        if self.self_attention_lang is not None:
+            text_feats = self.self_attention_lang(
+                text_feats.transpose(0, 1),
+                src_key_padding_mask=text_padding_mask
+            ).transpose(0, 1)
+
+        fuse_features = torch.cat([vis_feats, text_feats], dim=1)  # [B, 1024+N, 288]
+        fuse_padding_mask = torch.cat([padding_mask, text_padding_mask], dim=-1)  # [B, 1024+N]
+
+        # STEP 3. Self attention
+        fuse_feats = self.fuse_self_attention_layer(
+            fuse_features.transpose(0, 1),
+            src_key_padding_mask=fuse_padding_mask
+        ).transpose(0, 1)
+
+        vis_feats, text_feats = fuse_feats[:, :K], fuse_feats[:, K:]
+
+        return vis_feats, text_feats
+
 
 # BRIEF 
 class BiEncoder(nn.Module):

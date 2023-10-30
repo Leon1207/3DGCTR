@@ -473,18 +473,18 @@ class Joint3DDataset_debug(torch.utils.data.Dataset):
         # HACK: store the instance index
         object_ids[:instance_bboxes.shape[0]] = instance_bboxes[:, -1]
         
-        # captions = [
-        #         'cabinet', 'bed', 'chair', 'sofa', 'table', 'door',
-        #         'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
-        #         'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-        #         'others'
-        #     ]
         captions = [
-                'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+                'cabinet', 'bed', 'chair', 'sofa', 'table', 'door',
                 'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
                 'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-                'other furniture'
-            ] 
+                'others'
+            ]
+        # captions = [
+        #         'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+        #         'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
+        #         'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
+        #         'other furniture'
+        #     ] 
         captions = ' . '.join(captions)
 
         ret_dict = {}

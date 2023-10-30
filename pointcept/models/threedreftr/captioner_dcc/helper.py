@@ -52,7 +52,7 @@ class Matcher(nn.Module):
 
         final_cost = (
             self.cost_giou * giou_mat 
-            # + self.cost_class * class_mat  # debug
+            + self.cost_class * class_mat
         )
 
         final_cost = final_cost.detach().cpu().numpy()

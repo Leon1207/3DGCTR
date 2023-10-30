@@ -258,12 +258,11 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         if split in ["train", "val"]:
             
             self.scanrefer = SCANREFER['language'][split]
-            self.scan_names = SCANREFER['scene_list'][split]
+            # self.scan_names = SCANREFER['scene_list'][split]
+            self.scan_names = SCANREFER['scene_list'][split][:10]  # debug
             # if split == "train":
             #     self.scan_names = SCANREFER['scene_list'][split][:6]  # debug
 
-            # self.scanrefer = SCANREFER['language']['val']  # debug
-            # self.scan_names = ["scene0046_00"] * 6  # debug
             self.split = split
             print(f"kept {len(self.scan_names)} scans out of {len(all_scan_names)}")
             
@@ -484,7 +483,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         #         'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
         #         'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
         #         'other furniture'
-        #     ]  # debug
+        #     ]
         captions = ' . '.join(captions)
 
         targets = [self.dataset_config.class2type[
@@ -514,6 +513,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
                 ' '.join(captions.replace(',', ' ,').split())
                 + ' . not mentioned'
             )
+        # ret_dict["utterances"] = " chair ."  # caption ability
 
         all_detected_bboxes = np.zeros((MAX_NUM_OBJ, 6))
         all_detected_bbox_label_mask = np.array([False] * MAX_NUM_OBJ)

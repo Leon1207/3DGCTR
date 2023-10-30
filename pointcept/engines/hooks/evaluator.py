@@ -26,6 +26,7 @@ from pointcept.utils.proposal_parser import parse_predictions as parse_predictio
 from pointcept.datasets.box_util import box3d_iou_batch_tensor
 import wandb
 import torch.nn.functional as F
+from pointcept.datasets.preprocessing.scanrefer.model_util_scannet_v2c import ScannetDatasetConfig_V2C
 
 from .default import HookBase
 from .builder import HOOKS
@@ -676,15 +677,22 @@ class CaptionEvaluator(HookBase):
         self.test_min_iou = 0.50
         self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
         self.criterion = f'CiDEr@{self.test_min_iou}'
-        dataset_config = ScannetDatasetConfig(18)
+        dataset_config = ScannetDatasetConfig_V2C(18)
         # Used for AP calculation
+        # self.config_dict = {
+        #     'remove_empty_box': False, 'use_3d_nms': True,
+        #     'nms_iou': 0.25, 'use_old_type_nms': False, 'cls_nms': True,
+        #     'per_class_proposal': True, 'conf_thresh': 0.0,
+        #     'dataset_config': dataset_config,
+        #     'hungarian_loss': True
+        # }  # EDA
         self.config_dict = {
-            'remove_empty_box': False, 'use_3d_nms': True,
+            'remove_empty_box': True, 'use_3d_nms': True,
             'nms_iou': 0.25, 'use_old_type_nms': False, 'cls_nms': True,
-            'per_class_proposal': True, 'conf_thresh': 0.0,
+            'per_class_proposal': True, 'conf_thresh': 0.05,
             'dataset_config': dataset_config,
             'hungarian_loss': True
-        }
+        }  # V2C
 
     def after_epoch(self):
         if self.trainer.cfg.evaluate:
@@ -731,17 +739,17 @@ class CaptionEvaluator(HookBase):
             gt_box_corners = torch.stack([torch.from_numpy(box2points(gt_bboxes[b].cpu())) 
                                           for b in range(batch_size)], dim=0).cuda()  # [b, 132, 8, 3]
 
-            match_box_ious = box3d_iou_batch_tensor(    # batch, nqueries, MAX_NUM_OBJ
-                (box_corners.unsqueeze(2).repeat(1, 1, MAX_NUM_OBJ, 1, 1).view(-1, 8, 3)),
-                (gt_box_corners.unsqueeze(1).repeat(1, nqueries, 1, 1, 1).view(-1, 8, 3))
-            ).view(batch_size, nqueries, MAX_NUM_OBJ)  # [b, 256, 132]
+            # match_box_ious = box3d_iou_batch_tensor(    # batch, nqueries, MAX_NUM_OBJ
+            #     (box_corners.unsqueeze(2).repeat(1, 1, MAX_NUM_OBJ, 1, 1).view(-1, 8, 3)),
+            #     (gt_box_corners.unsqueeze(1).repeat(1, nqueries, 1, 1, 1).view(-1, 8, 3))
+            # ).view(batch_size, nqueries, MAX_NUM_OBJ)  # [b, 256, 132]
         
-            # match_box_ious = torch.stack([
-            #     _iou3d_par(
-            #         box_cxcyczwhd_to_xyzxyz(gt_bboxes[b]),  # [B, 132, 6]
-            #         box_cxcyczwhd_to_xyzxyz(pred_bbox[b])  # [B, 256, 6] 
-            #     )[0] for b in range(pred_bbox.shape[0])
-            # ], dim=0).transpose(-1, -2)  # batch, 256, 132
+            match_box_ious = torch.stack([
+                _iou3d_par(
+                    box_cxcyczwhd_to_xyzxyz(gt_bboxes[b]),  # [B, 132, 6]
+                    box_cxcyczwhd_to_xyzxyz(pred_bbox[b])  # [B, 256, 6] 
+                )[0] for b in range(pred_bbox.shape[0])
+            ], dim=0).transpose(-1, -2)  # batch, 256, 132
             
             match_box_ious, match_box_idxs = match_box_ious.max(-1) # batch, nqueries
             match_box_idxs = torch.gather(
@@ -749,13 +757,21 @@ class CaptionEvaluator(HookBase):
                 match_box_idxs
             ) # batch, nqueries
 
-            wordidx = np.array([
+            # wordidx = np.array([
+            #     0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
+            #     12, 13, 13, 14, 15, 16, 16, 17, 17, 18, 18
+            # ])  # 18+1（not mentioned）
+            # tokenidx = np.array([
+            #     1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
+            #     25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 42, 44, 45
+            # ])  # 18 token span
+            wordidx = np.array([ #len 27
                 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
-                12, 13, 13, 14, 15, 16, 16, 17, 17, 18, 18
+                12, 13, 13, 14, 15, 16, 16, 17, 18, 18
             ])  # 18+1（not mentioned）
-            tokenidx = np.array([
+            tokenidx = np.array([ #len 27
                 1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
-                25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 42, 44, 45
+                25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 43, 44
             ])  # 18 token span
 
             proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
@@ -776,56 +792,59 @@ class CaptionEvaluator(HookBase):
 
             # ---- Checkout bounding box ious and semantic logits
             good_bbox_masks = match_box_ious > self.test_min_iou     # batch, nqueries
-            class_id = end_points["last_sem_cls_scores"].argmax(-1)
+            # class_id = end_points["last_sem_cls_scores"].argmax(-1)
             good_bbox_masks &= end_points["last_sem_cls_scores"].argmax(-1) != (
                 end_points["last_sem_cls_scores"].shape[-1] - 1
             )  # debug, main problem laies...
 
             # ---- add nms to get accurate predictions
-            # _, nms_bbox_masks = parse_predictions(end_points, self.config_dict, "last_", size_cls_agnostic=True)  # [b, 256]
+            _, nms_bbox_masks = parse_predictions(end_points, self.config_dict, "last_", size_cls_agnostic=True)  # [b, 256]
 
-            nms_bbox_masks = parse_predictions_v2c(
-                box_corners, 
-                sem_cls_prob[..., :-1],  # [b, 256, 18]
-                end_points['objectness_prob'],  # [b, 256]
-                batch_data['point_clouds']
-            )  # [b, 256]
+            # nms_bbox_masks = parse_predictions_v2c(
+            #     box_corners, 
+            #     sem_cls_prob[..., :-1],  # [b, 256, 18]
+            #     end_points['objectness_prob'],  # [b, 256]
+            #     batch_data['point_clouds']
+            # )  # [b, 256]
 
             nms_bbox_masks = torch.from_numpy(nms_bbox_masks).long() == 1
             good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)  # debug, main problem laies...
 
             # vis
-            # wandb.init(project="vis_s3d", name="dc2")
+            # wandb.init(project="vis_s3d", name="dc_ability")
             # point_cloud_vis = batch_data['point_clouds'].reshape(-1, 50000, 6)[0].cpu()
             # og_color_vis = batch_data['og_color'][0].cpu()
             # point_cloud_vis[:, 3:] = (og_color_vis + torch.tensor([109.8, 97.2, 83.8]) / 256) * 256
             # gbc = gt_box_corners[0, batch_data['box_label_mask'][0].bool()].cpu()
-            # idx = sem_cls[0].argmax(0).cpu()
+            # # idx = sem_cls[0].argmax(0).cpu()
             # # bc = torch.stack([box_corners[0, id] for id in idx], dim=0)
-            # match_obj_id = torch.stack([match_box_idxs[0, id] for id in idx], dim=0)
+            # # match_obj_id = torch.stack([match_box_idxs[0, id] for id in idx], dim=0)
             # bc = box_corners[0][good_bbox_masks[0].bool()]
+            # obj_id = match_box_idxs[0][good_bbox_masks[0].bool()]
+            # scene_id = str(SCANREFER['scene_list']['val'][batch_data["scan_idx"][0]])
 
             # wandb.log({
             #         "point_scene": wandb.Object3D({
             #             "type": "lidar/beta",
             #             "points": point_cloud_vis,
             #             "boxes": np.array(
-            #                 [
+            #                 # [
+            #                 #     {
+            #                 #         "corners": c.tolist(),
+            #                 #         "label": "target",
+            #                 #         "color": [0, 255, 0]
+            #                 #     }
+            #                 #     for c in gbc
+            #                 # ] + 
+            #                 [  # predicted boxes
             #                     {
             #                         "corners": c.tolist(),
-            #                         "label": "target",
-            #                         "color": [0, 255, 0]
-            #                     }
-            #                     for c in gbc
-            #                 ] + [  # predicted boxes
-            #                     {
-            #                         "corners": c.tolist(),
-            #                         "label": "predicted",
+            #                         "label": scene_id + " : " + str(obj_id[i].item()),
             #                         "color": [255, 0, 0]
             #                     }
-            #                     for c in bc``
+            #                     for i, c in enumerate(bc)
             #                 ]
-            #             )
+            #             ),
             #         }),
             #     })
             
@@ -838,7 +857,6 @@ class CaptionEvaluator(HookBase):
             ### calculate measurable indicators on captions
             for idx, scene_id in enumerate(batch_data["scan_idx"].cpu().tolist()):
                 scene_name = SCANREFER['scene_list']['val'][scene_id]
-                # scene_name = "scene0046_00"  # debug
                 for prop_id in range(nqueries):
 
                     if good_bbox_masks[idx][prop_id] is False:

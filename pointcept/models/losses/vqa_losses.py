@@ -553,6 +553,16 @@ class SetCriterion(nn.Module):
 
         losses['loss_caption'] = cap_loss
         return losses
+    
+    def loss_scst(self, outputs, targets, indices, num_boxes, auxi_indices):
+
+        losses = {}
+        scst = 0.0
+        if 'scst' in outputs:
+            scst = outputs['scst']
+
+        losses['loss_scst'] = scst
+        return losses
 
     ############################
     # BRIEF semantic alignment #
@@ -715,7 +725,8 @@ class SetCriterion(nn.Module):
             'masks': self.loss_masks,      # mask loss
             'labels': self.loss_pos_align, # position alignment
             'contrastive_align': self.loss_sem_align,   # semantic alignment
-            'captions': self.loss_caption  # dense caption loss
+            'captions': self.loss_caption,  # dense caption loss
+            'scst': self.loss_scst  # dense caption scst loss
         }
         assert loss in loss_map, f'do you really want to compute {loss} loss?'
         return loss_map[loss](outputs, targets, indices, num_boxes, auxi_indices, **kwargs)
@@ -803,7 +814,7 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
         for b in range(gt_labels.shape[0])
     ]
 
-    loss_ce, loss_bbox, loss_giou, loss_sem_align, loss_mask, loss_dice, loss_caption = 0, 0, 0, 0, 0, 0, 0
+    loss_ce, loss_bbox, loss_giou, loss_sem_align, loss_mask, loss_dice, loss_caption, loss_scst = 0, 0, 0, 0, 0, 0, 0, 0
     for prefix in prefixes:
         output = {}
         if 'proj_tokens' in end_points:
@@ -824,6 +835,8 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             output["pred_masks"] = end_points["last_pred_masks"]
         if prefix == 'last_' and ("caption_logits" in end_points):
             output["pred_captions"] = end_points["caption_logits"][0]
+        if "scst" in end_points:
+            output["scst"] = end_points["scst"]
 
         # NOTE Compute all the requested losses, forward
         losses, _ = set_criterion(output, target)
@@ -839,6 +852,8 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             loss_sem_align += losses['loss_sem_align']
         if "caption_logits" in end_points:
             loss_caption += losses['loss_caption']
+        if "scst" in end_points:
+            loss_scst += losses['loss_scst']
 
     if 'seeds_obj_cls_logits' in end_points.keys():
         query_points_generation_loss = compute_points_obj_cls_loss_hard_topk(
@@ -858,7 +873,7 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
             + 5 * loss_bbox
             + loss_giou
             + weight * loss_sem_align
-        ) + 10 * loss_mask + 2 * loss_dice + 5 * loss_caption
+        ) + 10 * loss_mask + 2 * loss_dice + 5 * loss_caption + loss_scst
     )
     end_points['loss_ce'] = loss_ce
     end_points['loss_bbox'] = loss_bbox
@@ -869,4 +884,5 @@ def compute_hungarian_loss(end_points, num_decoder_layers, set_criterion,
     end_points['loss_mask'] = loss_mask
     end_points['loss_dice'] = loss_dice
     end_points['loss_caption'] = loss_caption
+    end_points['loss_scst'] = loss_scst
     return loss, end_points

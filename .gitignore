@@ -13,3 +13,5 @@ outputs/
 .idea
 */.DS_Store
 **/*.out
+
+wandb/
