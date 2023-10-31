@@ -143,6 +143,10 @@ class Trainer(TrainerBase):
                 if comm.get_world_size() > 1:
                     self.train_loader.sampler.set_epoch(self.epoch)
                 self.model.train()
+                if self.cfg.model.type == "DefaultOnlyCaptioner":
+                    for m in self.model.modules():
+                        if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)) and m not in self.model.backbone.captioner.modules():
+                            m.eval()
                 self.data_iterator = enumerate(self.train_loader)
                 self.before_epoch()
                 # => run_epoch
@@ -189,6 +193,12 @@ class Trainer(TrainerBase):
         model = build_model(self.cfg.model)
         if self.cfg.sync_bn:
             model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        # only training dc
+        if self.cfg.model.type == "DefaultOnlyCaptioner":
+            for param in model.parameters():
+                param.requires_grad = False
+            for param in model.backbone.captioner.parameters():
+                param.requires_grad = True
         n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         # logger.info(f"Model: \n{self.model}")
         self.logger.info(f"Num params: {n_parameters}")

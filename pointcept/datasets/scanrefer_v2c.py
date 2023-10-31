@@ -55,11 +55,11 @@ class Joint3DDataset_v2c(Dataset):
                  data_root='./',
                  transform=None,
                  dataset_dict={'scanrefer': 1, 'scannet': 10},
-                 test_dataset='scanrefer',  # det or rec
+                 test_dataset='scanrefer',  # det or rec, debug
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
-                 butd=True, butd_gt=False, butd_cls=False, augment_det=True,  # butd
+                 butd=False, butd_gt=False, butd_cls=False, augment_det=True,  # butd
                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
@@ -76,9 +76,9 @@ class Joint3DDataset_v2c(Dataset):
         self.use_multiview = use_multiview
         self.data_path = data_root
         self.visualization_superpoint = False  # manually set this to True to debug
-        self.butd = butd
-        self.butd_gt = butd_gt
-        self.butd_cls = butd_cls
+        self.butd = False  # butd = false
+        self.butd_gt = False
+        self.butd_cls = False
         self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
             'scannet' in dataset_dict
@@ -917,9 +917,6 @@ class Joint3DDataset_v2c(Dataset):
             
             # Target names
             if not self.random_utt:
-                
-                if anno['scan_id'] == "scene0106_00":
-                    print(1)
 
                 anno['target'] = [
                     DC18.class2type[DC18.nyu40id2class[self.label_map18[

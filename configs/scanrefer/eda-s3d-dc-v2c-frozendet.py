@@ -6,21 +6,16 @@ batch_size = 6
 batch_size_val = 6
 batch_size_test = 6
 
-# batch_size = 64
-# batch_size_val = 16
-# batch_size_test = 16
-
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
 eval_freq = 10
 find_unused_parameters = True
-# weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_v2c/model/model_best.pth"
+weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
 
 # model settings
 model = dict(
-    type="DefaultCaptioner",
+    type="DefaultOnlyCaptioner",
     backbone=dict(
         type="eda_ptv2_dc",
         butd=False  # not used butd
@@ -32,6 +27,7 @@ model = dict(
 epoch = 400
 eval_epoch = 400
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+param_dicts="onlydc"
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
 
 # dataset settings

@@ -150,9 +150,7 @@ class EDA_dc(nn.Module):
         self.scst_trainging = scst  # scst
         self.scst_model = SCST_Training()
 
-        # Init
         self.init_bn_momentum()
-    
     
     # BRIEF visual and text backbones.
     def _run_backbones(self, data_dict):

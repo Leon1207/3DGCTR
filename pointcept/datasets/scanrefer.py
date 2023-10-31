@@ -54,13 +54,13 @@ class Joint3DDataset(Dataset):
                  split='train',
                  data_root='./',
                  transform=None,
-                #  dataset_dict={'scanrefer': 1, 'scannet': 10},
-                 dataset_dict={'scannet': 1},  # debug
+                 dataset_dict={'scanrefer': 1, 'scannet': 10},
+                #  dataset_dict={'scannet': 1},  # debug
                  test_dataset='scannet',  # det or rec
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
-                 butd=True, butd_gt=False, butd_cls=False, augment_det=True,  # butd
+                 butd=False, butd_gt=False, butd_cls=False, augment_det=True,  # butd
                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
@@ -77,7 +77,7 @@ class Joint3DDataset(Dataset):
         self.use_multiview = use_multiview
         self.data_path = data_root
         self.visualization_superpoint = False  # manually set this to True to debug
-        self.butd = butd
+        self.butd = False  # butd
         self.butd_gt = butd_gt
         self.butd_cls = butd_cls
         self.loop = loop if not test_mode else 1

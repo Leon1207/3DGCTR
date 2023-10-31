@@ -155,6 +155,46 @@ class TransformerEncoderLayerNoFFN(nn.Module):
         src = self.norm1(src)
         return src
 
+class TransformerEncoderLayer(nn.Module):
+    """TransformerEncoderLayer with FFN."""
+
+    def __init__(self, d_model, nhead, dropout, dim_feedforward):
+        """Intialize same as Transformer (without FFN params)."""
+        super().__init__()
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, dim_feedforward),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim_feedforward, d_model),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, src, src_mask=None, src_key_padding_mask=None):
+        """
+        Pass the input through the encoder layer (same as parent class).
+
+        Args:
+            src: (S, B, F)
+            src_mask: the mask for the src sequence (optional)
+            src_key_padding_mask: (B, S) mask for src keys per batch (optional)
+        Shape:
+            see the docs in Transformer class.
+        Return_shape: (S, B, F)
+        """
+        src2 = self.self_attn(
+            src, src, src,
+            attn_mask=src_mask,
+            key_padding_mask=src_key_padding_mask
+        )[0]
+        src = src + self.dropout1(src2)
+        src = self.norm1(src)
+        src = self.norm2(src + self.ffn(src))
+        return src
+
 # BRIEF vision self-attention
 class PosTransformerEncoderLayerNoFFN(TransformerEncoderLayerNoFFN):
     """TransformerEncoderLayerNoFFN but additionaly add pos_embed in query."""
@@ -285,8 +325,8 @@ class SelfEncoderLayer(nn.Module):
             self.self_attention_visual = None
 
         # cross attention in language and vision
-        self.fuse_self_attention_layer = TransformerEncoderLayerNoFFN(
-            d_model=d_model, nhead=n_heads, dropout=dropout
+        self.fuse_self_attention_layer = TransformerEncoderLayer(
+            d_model=d_model, nhead=n_heads, dropout=dropout, dim_feedforward=dim_feedforward
         )
     
     def forward(self, vis_feats, pos_feats, padding_mask, text_feats,

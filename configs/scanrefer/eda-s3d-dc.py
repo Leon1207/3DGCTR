@@ -16,7 +16,7 @@ model = dict(
     type="DefaultCaptioner",
     backbone=dict(
         type="eda_ptv2_dc",
-        butd="False"  # not used butd
+        butd=False  # not used butd
     ),
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )

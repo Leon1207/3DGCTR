@@ -797,9 +797,10 @@ class CaptionEvaluator(HookBase):
                 end_points["last_sem_cls_scores"].shape[-1] - 1
             )  # debug, main problem laies...
 
-            # ---- add nms to get accurate predictions
+            # ---- add nms to get accurate predictions, EDA
             _, nms_bbox_masks = parse_predictions(end_points, self.config_dict, "last_", size_cls_agnostic=True)  # [b, 256]
 
+            # V2C    
             # nms_bbox_masks = parse_predictions_v2c(
             #     box_corners, 
             #     sem_cls_prob[..., :-1],  # [b, 256, 18]

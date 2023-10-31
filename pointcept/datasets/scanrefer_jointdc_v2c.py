@@ -258,8 +258,8 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         if split in ["train", "val"]:
             
             self.scanrefer = SCANREFER['language'][split]
-            # self.scan_names = SCANREFER['scene_list'][split]
-            self.scan_names = SCANREFER['scene_list'][split][:10]  # debug
+            self.scan_names = SCANREFER['scene_list'][split]
+            # self.scan_names = SCANREFER['scene_list'][split][:10]  # debug
             # if split == "train":
             #     self.scan_names = SCANREFER['scene_list'][split][:6]  # debug
 
