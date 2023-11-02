@@ -27,6 +27,55 @@ from pointcept.utils.logger import get_root_logger
 from pointcept.utils.optimizer import build_optimizer
 from pointcept.utils.scheduler import build_scheduler
 from pointcept.utils.events import EventStorage
+import random
+
+
+class CustomBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, dataset_sizes, batch_size, drop_last, sampler=None):
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+        self.sampler = sampler
+        if sampler:
+            self.dataset1_indices = [idx for idx in sampler if idx < dataset_sizes[0]]
+            self.dataset2_indices = [idx for idx in sampler if idx >= dataset_sizes[0]]
+        else:
+            self.dataset1_indices = list(range(0, dataset_sizes[0]))
+            self.dataset2_indices = list(range(dataset_sizes[0], dataset_sizes[0] + dataset_sizes[1]))
+        self.random = random.Random(1184)
+
+    def __iter__(self):
+        # Shuffle indices
+        self.random.shuffle(self.dataset1_indices)
+        self.random.shuffle(self.dataset2_indices)
+
+        batches = []
+
+        for i in range(0, len(self.dataset1_indices), self.batch_size):
+            batch = self.dataset1_indices[i:i + self.batch_size]
+            if len(batch) == self.batch_size or not self.drop_last:
+                batches.append(batch)
+
+        for i in range(0, len(self.dataset2_indices), self.batch_size):
+            batch = self.dataset2_indices[i:i + self.batch_size]
+            if len(batch) == self.batch_size or not self.drop_last:
+                batches.append(batch)
+
+        self.random.shuffle(batches)
+
+        for batch in batches:
+            yield batch
+
+    def set_epoch(self, epoch):
+        self.random.seed(epoch)
+        if hasattr(self.sampler, "set_epoch"):
+            self.sampler.set_epoch(epoch)
+
+    def __len__(self):
+        if self.drop_last:
+            return (len(self.dataset1_indices) // self.batch_size + len(self.dataset2_indices) // self.batch_size)
+        else:
+            return (len(self.dataset1_indices) + len(self.dataset2_indices)) // self.batch_size
+
 
 
 class TrainerBase:
@@ -141,7 +190,11 @@ class Trainer(TrainerBase):
                 # => before epoch
                 # TODO: optimize to iteration based
                 if comm.get_world_size() > 1:
-                    self.train_loader.sampler.set_epoch(self.epoch)
+                    if isinstance(self.train_loader.sampler, torch.utils.data.distributed.DistributedSampler):
+                        self.train_loader.sampler.set_epoch(self.epoch)
+                    elif hasattr(self.train_loader.batch_sampler, "set_epoch"):
+                        self.train_loader.batch_sampler.set_epoch(self.epoch)
+
                 self.model.train()
                 if self.cfg.model.type == "DefaultOnlyCaptioner":
                     for m in self.model.modules():
@@ -215,16 +268,39 @@ class Trainer(TrainerBase):
     def build_train_loader(self):
         train_data = build_dataset(self.cfg.data.train)
 
-        if comm.get_world_size() > 1:
-            train_sampler = torch.utils.data.distributed.DistributedSampler(train_data)
-        else:
-            train_sampler = None
-
         init_fn = partial(
             worker_init_fn, num_workers=self.cfg.num_worker_per_gpu, rank=comm.get_rank(),
-            seed=self.cfg.seed) if self.cfg.seed is not None else None
+                seed=self.cfg.seed) if self.cfg.seed is not None else None
 
-        train_loader = torch.utils.data.DataLoader(train_data,
+        if "train_joint" in self.cfg.data:
+            train_joint_data = build_dataset(self.cfg.data.train_joint)
+            train_data = torch.utils.data.ConcatDataset([train_data, train_joint_data])
+
+            if comm.get_world_size() > 1:
+                train_sampler = torch.utils.data.distributed.DistributedSampler(train_data)
+                batch_sampler = CustomBatchSampler(dataset_sizes=[len(train_data) - len(train_joint_data), len(train_joint_data)], 
+                                                        batch_size=self.cfg.batch_size_per_gpu, 
+                                                        drop_last=True,
+                                                        sampler=train_sampler)
+            else:
+                batch_sampler = CustomBatchSampler(dataset_sizes=[len(train_data) - len(train_joint_data), len(train_joint_data)], 
+                                                        batch_size=self.cfg.batch_size_per_gpu, 
+                                                        drop_last=True)
+
+            train_loader = torch.utils.data.DataLoader(train_data,
+                                                   num_workers=self.cfg.num_worker_per_gpu,
+                                                   batch_sampler=batch_sampler,
+                                                   collate_fn=partial(point_collate_fn, mix_prob=self.cfg.mix_prob),
+                                                   pin_memory=False,
+                                                   worker_init_fn=init_fn,
+                                                   persistent_workers=True)
+        else:
+            if comm.get_world_size() > 1:
+                train_sampler = torch.utils.data.distributed.DistributedSampler(train_data)
+            else:
+                train_sampler = None
+
+            train_loader = torch.utils.data.DataLoader(train_data,
                                                    batch_size=self.cfg.batch_size_per_gpu,
                                                    shuffle=(train_sampler is None),
                                                    num_workers=self.cfg.num_worker_per_gpu,
@@ -234,6 +310,7 @@ class Trainer(TrainerBase):
                                                    worker_init_fn=init_fn,
                                                    drop_last=True,
                                                    persistent_workers=True)
+
         return train_loader
 
     def build_val_loader(self):

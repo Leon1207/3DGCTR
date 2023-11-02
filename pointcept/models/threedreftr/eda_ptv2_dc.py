@@ -322,25 +322,26 @@ class EDA_dc(nn.Module):
             query_last = query
 
         # caption head
-        end_points['reference_tokens'] = data_dict['reference_tokens']
-        end_points['reference_masks'] = data_dict['reference_masks']
-        end_points['query_last'] = query_last
-        cls_prob = F.softmax(end_points['last_sem_cls_scores'], dim=-1)
-        end_points['objectness_prob'] = 1 - cls_prob[..., -1]
-        if self.training:
-            if self.scst_trainging:
-                greedy_caption, beam_caption, data_dict, assignments =\
-                    self.captioner(end_points, data_dict, is_eval=False)
-                scst_loss = self.scst_model(greedy_caption, beam_caption, data_dict, assignments)
-                end_points['scst'] = 5 * scst_loss
+        if "reference_tokens" in data_dict.keys():
+            end_points['reference_tokens'] = data_dict['reference_tokens']
+            end_points['reference_masks'] = data_dict['reference_masks']
+            end_points['query_last'] = query_last
+            cls_prob = F.softmax(end_points['last_sem_cls_scores'], dim=-1)
+            end_points['objectness_prob'] = 1 - cls_prob[..., -1]
+            if self.training:
+                if self.scst_trainging:
+                    greedy_caption, beam_caption, data_dict, assignments =\
+                        self.captioner(end_points, data_dict, is_eval=False)
+                    scst_loss = self.scst_model(greedy_caption, beam_caption, data_dict, assignments)
+                    end_points['scst'] = 5 * scst_loss
+                else:
+                    outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
+                        self.captioner(end_points, data_dict, is_eval=False)
+                    end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
+                    end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
             else:
-                outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
-                    self.captioner(end_points, data_dict, is_eval=False)
-                end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
-                end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
-        else:
-            lang_cap = self.captioner(end_points, data_dict, is_eval=True)
-            end_points['lang_cap'] = lang_cap
+                lang_cap = self.captioner(end_points, data_dict, is_eval=True)
+                end_points['lang_cap'] = lang_cap
 
         return end_points
 

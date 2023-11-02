@@ -2,16 +2,17 @@ _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
 # bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
 
-batch_size = 6 
+batch_size = 1 
 batch_size_val = 6
 batch_size_test = 6
 
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-eval_freq = 10
+eval_freq = 1
 find_unused_parameters = True
-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+# weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+weight = "/userhome/lyd/Pointcept/exp/model_best_frozen_dcmodel_66_38.pth"
 
 # model settings
 model = dict(
@@ -26,7 +27,8 @@ model = dict(
 # scheduler settings
 epoch = 400
 eval_epoch = 400
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+# optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+optimizer = dict(type="AdamW", lr=0.0, weight_decay=0.0)
 param_dicts="onlydc"
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
 
@@ -35,8 +37,8 @@ dataset_type = "Joint3DDataset_JointDC_v2c"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 hooks = [
-    dict(type="CheckpointLoader", keywords='module.', replacement=''),  # one gpu
-    # dict(type="CheckpointLoader"),  # multi gpus
+    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    dict(type="CheckpointLoader"),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
@@ -145,7 +147,7 @@ data = dict(
 
 # tester
 test = dict(
-    type="DetTester",
+    type="CaptionTester",
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 

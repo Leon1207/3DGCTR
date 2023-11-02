@@ -733,16 +733,6 @@ class CaptionEvaluator(HookBase):
             pred_center = end_points['last_center']
             pred_size = end_points['last_pred_size']
             pred_bbox = torch.cat([pred_center, pred_size], dim=-1)
-
-            box_corners = torch.stack([torch.from_numpy(box2points(pred_bbox[b].cpu())) 
-                                       for b in range(batch_size)], dim=0).cuda()  # [b, 256, 8, 3]
-            gt_box_corners = torch.stack([torch.from_numpy(box2points(gt_bboxes[b].cpu())) 
-                                          for b in range(batch_size)], dim=0).cuda()  # [b, 132, 8, 3]
-
-            # match_box_ious = box3d_iou_batch_tensor(    # batch, nqueries, MAX_NUM_OBJ
-            #     (box_corners.unsqueeze(2).repeat(1, 1, MAX_NUM_OBJ, 1, 1).view(-1, 8, 3)),
-            #     (gt_box_corners.unsqueeze(1).repeat(1, nqueries, 1, 1, 1).view(-1, 8, 3))
-            # ).view(batch_size, nqueries, MAX_NUM_OBJ)  # [b, 256, 132]
         
             match_box_ious = torch.stack([
                 _iou3d_par(
@@ -795,12 +785,21 @@ class CaptionEvaluator(HookBase):
             # class_id = end_points["last_sem_cls_scores"].argmax(-1)
             good_bbox_masks &= end_points["last_sem_cls_scores"].argmax(-1) != (
                 end_points["last_sem_cls_scores"].shape[-1] - 1
-            )  # debug, main problem laies...
+            )
 
             # ---- add nms to get accurate predictions, EDA
             _, nms_bbox_masks = parse_predictions(end_points, self.config_dict, "last_", size_cls_agnostic=True)  # [b, 256]
 
-            # V2C    
+            # V2C  
+            # box_corners = np.zeros((batch_size, nqueries, 8, 3))  # b, 256, 8, 3
+            # pred_center_upright_camera = flip_axis_to_camera(pred_center.detach().cpu().numpy())
+            # for i in range(batch_size):
+            #     for j in range(nqueries):
+            #         heading_angle = 0
+            #         box_size = pred_size[i, j].detach().cpu().numpy()
+            #         corners_3d_upright_camera = get_3d_box(box_size, heading_angle, pred_center_upright_camera[i, j, :])
+            #         box_corners[i, j] = corners_3d_upright_camera
+            # box_corners = torch.from_numpy(box_corners)  
             # nms_bbox_masks = parse_predictions_v2c(
             #     box_corners, 
             #     sem_cls_prob[..., :-1],  # [b, 256, 18]
@@ -809,9 +808,13 @@ class CaptionEvaluator(HookBase):
             # )  # [b, 256]
 
             nms_bbox_masks = torch.from_numpy(nms_bbox_masks).long() == 1
-            good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)  # debug, main problem laies...
+            good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)
 
             # vis
+            # box_corners = torch.stack([torch.from_numpy(box2points(pred_bbox[b].cpu())) 
+            #                            for b in range(batch_size)], dim=0).cuda()  # [b, 256, 8, 3]
+            # gt_box_corners = torch.stack([torch.from_numpy(box2points(gt_bboxes[b].cpu())) 
+            #                               for b in range(batch_size)], dim=0).cuda()  # [b, 132, 8, 3]
             # wandb.init(project="vis_s3d", name="dc_ability")
             # point_cloud_vis = batch_data['point_clouds'].reshape(-1, 50000, 6)[0].cpu()
             # og_color_vis = batch_data['og_color'][0].cpu()
@@ -877,7 +880,7 @@ class CaptionEvaluator(HookBase):
             
             mem_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
             self.trainer.logger.info(
-                f"Evaluate; Batch [{curr_iter}/{num_batches}]; "
+                f"Evaluate; Batch [{curr_iter + 1}/{num_batches}]; "
                 f"Mem {mem_mb:0.2f}MB"
             )
         
@@ -1405,7 +1408,7 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
     # pred_bbox_check = end_points[f'{prefix}bbox_check']  # B,num_proposal,3
 
     bsize = pred_center.shape[0]
-    pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))
+    pred_corners_3d_upright_camera = np.zeros((bsize, num_proposal, 8, 3))  # b, 256, 8, 3
     pred_center_upright_camera = flip_axis_to_camera(pred_center.detach().cpu().numpy())
     for i in range(bsize):
         for j in range(num_proposal):
@@ -1444,7 +1447,7 @@ def parse_predictions(end_points, config_dict, prefix="", size_cls_agnostic=Fals
             obj_prob = sigmoid(obj_logits)  # (B,K)
         else: 
             obj_prob = (1 - sem_cls_probs[:,:,-1])
-            sem_cls_probs = sem_cls_probs[..., :-1] / obj_prob[..., None]
+            sem_cls_probs = sem_cls_probs[..., :-1] / obj_prob[..., None]  # differences
     else:
         obj_logits = end_points[f'{prefix}objectness_scores'].detach().cpu().numpy()
         obj_prob = sigmoid(obj_logits)[:, :, 0]  # (B,256)

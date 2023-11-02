@@ -1,33 +1,22 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 6 # bs: total bs in all gpus  108
+# bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
+
+batch_size = 1 
+batch_size_val = 6
+batch_size_test = 6
+
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-batch_size_val = 6
-batch_size_test = 6
 eval_freq = 1
 find_unused_parameters = True
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-nofilter/model/model_best.pth"
-# weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_v2c/model/model_best.pth"
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-promptalign/model/model_best.pth"
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining/model/model_best.pth"
-
-
-hooks = [
-    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    dict(type="CheckpointLoader"), 
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
+# weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+weight = "/userhome/lyd/Pointcept/exp/model_best_frozen_dcmodel_66_38.pth"
 
 # model settings
 model = dict(
-    type="DefaultCaptioner",
+    type="DefaultOnlyCaptioner",
     backbone=dict(
         type="eda_ptv2_dc",
         butd=False  # not used butd
@@ -36,14 +25,25 @@ model = dict(
 )
 
 # scheduler settings
-epoch = 720
-eval_epoch = 720
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+epoch = 400
+eval_epoch = 400
+optimizer = dict(type="AdamW", lr=0.0, weight_decay=0.0005)
+param_dicts="onlydc"
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+
+hooks = [
+    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    dict(type="CheckpointLoader"),
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
 
 data = dict(
     num_classes=13,
@@ -145,7 +145,8 @@ data = dict(
 )
 
 # tester
-test = dict("V2CDetTester",
+test = dict(
+    type="CaptionTester",
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 

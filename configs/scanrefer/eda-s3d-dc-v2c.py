@@ -13,10 +13,11 @@ batch_size_test = 6
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-eval_freq = 10
+eval_freq = 1
 find_unused_parameters = True
 # weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_v2c/model/model_best.pth"
+# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_v2c/model/model_best.pth"
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-frozendet/model/model_best.pth"
 
 # model settings
 model = dict(
@@ -39,8 +40,8 @@ dataset_type = "Joint3DDataset_JointDC_v2c"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 hooks = [
-    dict(type="CheckpointLoader", keywords='module.', replacement=''),  # one gpu
-    # dict(type="CheckpointLoader"),  # multi gpus
+    # dict(type="CheckpointLoader", keywords='module.', replacement=''),  # one gpu
+    dict(type="CheckpointLoader"),  # multi gpus
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),

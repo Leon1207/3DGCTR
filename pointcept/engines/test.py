@@ -336,7 +336,8 @@ class GroundingTester(object):
                 inputs["train"] = False
 
             # STEP Forward pass
-            end_points = model(inputs)
+            with torch.no_grad():
+                end_points = model(inputs)
 
             # STEP Compute loss 
             _, end_points = criterion(
@@ -395,10 +396,256 @@ class GroundingTester(object):
     def collate_fn(batch):
         return collate_fn(batch)
 
+from pointcept.engines.hooks.evaluator import prepare_corpus as prepare_corpus_
+from pointcept.engines.hooks.evaluator import _iou3d_par as _iou3d_par_
+from pointcept.engines.hooks.evaluator import box_cxcyczwhd_to_xyzxyz as box_cxcyczwhd_to_xyzxyz_
+from pointcept.engines.hooks.evaluator import parse_predictions as parse_predictions_
+from pointcept.engines.hooks.evaluator import score_captions as score_captions_
+from pointcept.engines.hooks.evaluator import SCANREFER
+from collections import OrderedDict, defaultdict
+import json
+
+@TEST.register_module()
+class CaptionTester(object):
+
+    def __init__(self, 
+                 losses=['boxes', 'labels', 'contrastive_align', 'captions']):
+        super().__init__()
+        self.test_min_iou = 0.50
+        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
+        dataset_config = ScannetDatasetConfig_V2C(18)
+        # Used for AP calculation
+        self.config_dict = {
+            'remove_empty_box': True, 'use_3d_nms': True,
+            'nms_iou': 0.25, 'use_old_type_nms': False, 'cls_nms': True,
+            'per_class_proposal': True, 'conf_thresh': 0.05,
+            'dataset_config': dataset_config,
+            'hungarian_loss': True
+        }  # V2C
+
+
+    def __call__(self, cfg, test_loader, model):
+
+        logger = get_root_logger()
+        logger.info('>>>>>>>>>>>>>>>> Start Testing >>>>>>>>>>>>>>>>')
+        model.eval()
+
+        if self.checkpoint_dir.split("/")[-1] == 'captions_result':
+            self.checkpoint_dir = self.checkpoint_dir + "/" + cfg.save_path.split("/")[-1]
+        
+        # prepare ground truth caption labels
+        print("preparing corpus...")
+        corpus, object_id_to_name = prepare_corpus_(
+            SCANREFER['language']['val']
+        )
+        
+        ### initialize and prepare for evaluation
+        num_batches = len(test_loader)
+        candidates = {'caption': OrderedDict({}), 'iou': defaultdict(float)}
+        
+        for curr_iter, batch_data in enumerate(test_loader):
+            
+            inputs = self._to_gpu(batch_data)
+
+            with torch.no_grad():
+                end_points = model(inputs)
+            
+            # match objects
+            batch_size, nqueries, _ =  end_points['last_center'].shape
+            gt_center = end_points['center_label'][:, :, 0:3]       
+            gt_size = end_points['size_gts']                        
+            gt_bboxes = torch.cat([gt_center, gt_size], dim=-1)
+            pred_center = end_points['last_center']
+            pred_size = end_points['last_pred_size']
+            pred_bbox = torch.cat([pred_center, pred_size], dim=-1)
+        
+            match_box_ious = torch.stack([
+                _iou3d_par_(
+                    box_cxcyczwhd_to_xyzxyz_(gt_bboxes[b]),  # [B, 132, 6]
+                    box_cxcyczwhd_to_xyzxyz_(pred_bbox[b])  # [B, 256, 6] 
+                )[0] for b in range(pred_bbox.shape[0])
+            ], dim=0).transpose(-1, -2)  # batch, 256, 132
+            
+            match_box_ious, match_box_idxs = match_box_ious.max(-1) # batch, nqueries
+            match_box_idxs = torch.gather(
+                batch_data['gt_box_object_ids'], 1, 
+                match_box_idxs
+            ) # batch, nqueries
+
+            wordidx = np.array([ #len 27
+                0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
+                12, 13, 13, 14, 15, 16, 16, 17, 18, 18
+            ])  # 18+1（not mentioned）
+            tokenidx = np.array([ #len 27
+                1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
+                25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 43, 44
+            ])  # 18 token span
+
+            proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
+            proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
+            sem_scores = torch.matmul(proj_queries, proj_tokens.transpose(-1, -2))
+            sem_scores_ = sem_scores / 0.07  # (B, Q, tokens)
+            sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)
+            sem_scores = sem_scores.to(sem_scores_.device)
+            sem_scores[:, :sem_scores_.size(1), :sem_scores_.size(2)] = sem_scores_
+            end_points['last_sem_cls_scores'] = sem_scores  # ([B, 256, 256])
+
+            sem_cls = torch.zeros_like(end_points['last_sem_cls_scores'])[..., :19] # ([B, 256, 19])
+            for w, t in zip(wordidx, tokenidx):
+                sem_cls[..., w] += end_points['last_sem_cls_scores'][..., t]
+            end_points['last_sem_cls_scores'] = sem_cls
+            sem_cls_prob = F.softmax(sem_cls, dim=-1)
+            end_points['objectness_prob'] = 1 - sem_cls_prob[..., -1]  # [b, 256]
+
+            # ---- Checkout bounding box ious and semantic logits
+            good_bbox_masks = match_box_ious > self.test_min_iou     # batch, nqueries
+            good_bbox_masks &= end_points["last_sem_cls_scores"].argmax(-1) != (
+                end_points["last_sem_cls_scores"].shape[-1] - 1
+            )
+
+            # ---- add nms to get accurate predictions, EDA
+            _, nms_bbox_masks = parse_predictions_(end_points, self.config_dict, "last_", size_cls_agnostic=True)  # [b, 256]
+
+            nms_bbox_masks = torch.from_numpy(nms_bbox_masks).long() == 1
+            good_bbox_masks &= nms_bbox_masks.to(good_bbox_masks.device)
+            good_bbox_masks = good_bbox_masks.cpu().tolist()
+            
+            captions = end_points["lang_cap"]  # batch, nqueries, [sentence]
+            
+            match_box_idxs = match_box_idxs.cpu().tolist()
+            match_box_ious = match_box_ious.cpu().tolist()
+            ### calculate measurable indicators on captions
+            for idx, scene_id in enumerate(batch_data["scan_idx"].cpu().tolist()):
+                scene_name = SCANREFER['scene_list']['val'][scene_id]
+                for prop_id in range(nqueries):
+
+                    if good_bbox_masks[idx][prop_id] is False:
+                        continue
+                    
+                    match_obj_id = match_box_idxs[idx][prop_id]
+                    match_obj_iou = match_box_ious[idx][prop_id]
+                    
+                    object_name = object_id_to_name[f"{scene_name}|{match_obj_id}"]
+                    key = f"{scene_name}|{match_obj_id}|{object_name}"
+                    
+                    if match_obj_iou > candidates['iou'][key]:
+                        candidates['iou'][key] = match_obj_iou
+                        candidates['caption'][key] = [
+                            captions[idx][prop_id]
+                        ]
+            
+            mem_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
+            logger.info(
+                f"Evaluate; Batch [{curr_iter + 1}/{num_batches}]; "
+                f"Mem {mem_mb:0.2f}MB"
+            )
+        
+        ### message out
+        missing_proposals = len(corpus.keys() - candidates['caption'].keys())
+        total_captions = len(corpus.keys())
+        logger.info(
+            f"\n----------------------Evaluation-----------------------\n"
+            f"INFO: iou@{self.test_min_iou} matched proposals: "
+            f"[{total_captions - missing_proposals} / {total_captions}], "
+        )
+        
+        ### make up placeholders for undetected bounding boxes
+        for missing_key in (corpus.keys() - candidates['caption'].keys()):
+            candidates['caption'][missing_key] = ["sos eos"]
+        
+        # find annotated objects in scanrefer
+        candidates = OrderedDict([
+            (key, value) for key, value in sorted(candidates['caption'].items()) \
+                if not key.endswith("unknown")
+        ])
+        score_per_caption, message, eval_metric = score_captions_(
+            OrderedDict([(key, corpus[key]) for key in candidates]), candidates
+        )
+        
+        logger.info(message)
+        
+        with open(os.path.join(self.checkpoint_dir, "corpus_val.json"), "w") as f: 
+            json.dump(corpus, f, indent=4)
+        
+        with open(os.path.join(self.checkpoint_dir, "pred_val.json"), "w") as f:
+            json.dump(candidates, f, indent=4)
+        
+        with open(os.path.join(self.checkpoint_dir, "pred_gt_val.json"), "w") as f:
+            pred_gt_val = {}
+            for scene_object_id, scene_object_id_key in enumerate(candidates):
+                pred_gt_val[scene_object_id_key] = {
+                    'pred': candidates[scene_object_id_key],
+                    'gt': corpus[scene_object_id_key],
+                    'score': {
+                        'bleu-1': score_per_caption['bleu-1'][scene_object_id],
+                        'bleu-2': score_per_caption['bleu-2'][scene_object_id],
+                        'bleu-3': score_per_caption['bleu-3'][scene_object_id],
+                        'bleu-4': score_per_caption['bleu-4'][scene_object_id],
+                        'CiDEr': score_per_caption['cider'][scene_object_id],
+                        'rouge': score_per_caption['rouge'][scene_object_id],
+                        'meteor': score_per_caption['meteor'][scene_object_id]
+                    }
+                }
+            json.dump(pred_gt_val, f, indent=4)
+        
+        eval_metrics = {
+            metric + f'@{self.test_min_iou}': score \
+                for metric, score in eval_metric.items()
+        }
+
+        logger.info(eval_metrics)
+        logger.info('<<<<<<<<<<<<<<<<< End Testing <<<<<<<<<<<<<<<<<')
+
+    def _accumulate_stats(self, stat_dict, end_points):
+        for key in end_points:
+            if 'loss' in key or 'acc' in key or 'ratio' in key:
+                if key not in stat_dict:
+                    stat_dict[key] = 0
+                if isinstance(end_points[key], (float, int)):
+                    stat_dict[key] += end_points[key]
+                else:
+                    stat_dict[key] += end_points[key].item()
+        return stat_dict
+    
+    def _to_gpu(self, data_dict):
+        if torch.cuda.is_available():
+            for key in data_dict:
+                if isinstance(data_dict[key], torch.Tensor):
+                    data_dict[key] = data_dict[key].cuda(non_blocking=True)
+        return data_dict
+    
+    @staticmethod
+    def collate_fn(batch):
+        return collate_fn(batch)
+
 
 from tqdm import tqdm
 from multiprocessing import Pool
 from scipy.spatial import ConvexHull
+
+def calc_iou(box_a, box_b):
+    """Computes IoU of two axis aligned bboxes.
+    Args:
+        box_a, box_b: 6D of center and lengths        
+    Returns:
+        iou
+    """
+
+    max_a = box_a[0:3] + box_a[3:6] / 2
+    max_b = box_b[0:3] + box_b[3:6] / 2
+    min_max = np.array([max_a, max_b]).min(0)
+
+    min_a = box_a[0:3] - box_a[3:6] / 2
+    min_b = box_b[0:3] - box_b[3:6] / 2
+    max_min = np.array([min_a, min_b]).max(0)
+    if not ((min_max > max_min).all()):
+        return 0.0
+
+    intersection = (min_max - max_min).prod()
+    vol_a = box_a[3:6].prod()
+    vol_b = box_b[3:6].prod()
+    union = vol_a + vol_b - intersection
+    return 1.0 * intersection / union
 
 def get_iou(bb1, bb2):
     iou3d = calc_iou(bb1, bb2)
@@ -804,6 +1051,40 @@ class APCalculator(object):
 
         return rec, prec, ap
 
+    def nms_2d_faster(self, boxes, overlap_threshold, old_type=False):
+        x1 = boxes[:, 0]
+        y1 = boxes[:, 1]
+        x2 = boxes[:, 2]
+        y2 = boxes[:, 3]
+        score = boxes[:, 4]
+        area = (x2 - x1) * (y2 - y1)
+
+        I = np.argsort(score)
+        pick = []
+        while I.size != 0:
+            last = I.size
+            i = I[-1]
+            pick.append(i)
+
+            xx1 = np.maximum(x1[i], x1[I[: last - 1]])
+            yy1 = np.maximum(y1[i], y1[I[: last - 1]])
+            xx2 = np.minimum(x2[i], x2[I[: last - 1]])
+            yy2 = np.minimum(y2[i], y2[I[: last - 1]])
+
+            w = np.maximum(0, xx2 - xx1)
+            h = np.maximum(0, yy2 - yy1)
+
+            if old_type:
+                o = (w * h) / area[I[: last - 1]]
+            else:
+                inter = w * h
+                o = inter / (area[i] + area[I[: last - 1]] - inter)
+
+            I = np.delete(
+                I, np.concatenate(([last - 1], np.where(o > overlap_threshold)[0]))
+            )
+
+        return pick
 
     def eval_grounding(self, pred_all, gt_all, ovthresh=0.25):
         """ Generic functions to compute accuracy for grounding
@@ -1053,7 +1334,8 @@ class DetTester(object):
             inputs["train"] = False
 
         # STEP Forward pass
-        end_points = model(inputs)
+        with torch.no_grad():
+            end_points = model(inputs)
 
         # STEP Compute loss
         _, end_points = self._compute_loss(
@@ -1352,7 +1634,7 @@ class DetTester(object):
                     boxes_2d_with_prob[j, 3] = np.max(pred_corners_3d_upright_camera[i, j, :, 2])
                     boxes_2d_with_prob[j, 4] = obj_prob[i, j]
                 nonempty_box_inds = np.where(nonempty_box_mask[i, :] == 1)[0]
-                pick = nms_2d_faster(boxes_2d_with_prob[nonempty_box_mask[i, :] == 1, :],
+                pick = self.nms_2d_faster(boxes_2d_with_prob[nonempty_box_mask[i, :] == 1, :],
                                     config_dict['nms_iou'], config_dict['use_old_type_nms'])
                 assert (len(pick) > 0)
                 pred_mask[i, nonempty_box_inds[pick]] = 1

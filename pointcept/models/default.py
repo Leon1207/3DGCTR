@@ -132,75 +132,42 @@ class DefaultCaptioner(nn.Module):
             "det_class_ids": input_dict['all_detected_class_ids'],   
             "offset": input_dict['offset'],
             "source_xzy": input_dict['source_xzy'],
-            "reference_tokens": input_dict['reference_tokens'],
-            "reference_masks": input_dict['reference_masks'],
             "box_label_mask": input_dict['box_label_mask'],
             "center_label": input_dict['center_label'],
             "size_gts": input_dict['size_gts'],
             "sem_cls_label": input_dict['sem_cls_label'],
             "superpoint": input_dict['superpoint'],
             "positive_map": input_dict['positive_map'],
-            "scan_idx": input_dict['scan_idx'],
-            "gt_box_object_ids": input_dict['gt_box_object_ids']
         }     
-        # inputs.update(input_dict)  # debug
+        
+        if "reference_tokens" in input_dict:
+            caption_dict = {
+                "reference_tokens": input_dict['reference_tokens'],
+                "reference_masks": input_dict['reference_masks'],
+                "scan_idx": input_dict['scan_idx'],
+                "gt_box_object_ids": input_dict['gt_box_object_ids']
+            }
+            inputs.update(caption_dict)
+        
         end_points = self.backbone(inputs)
         end_points.update(input_dict)
         # train
         if self.training:
             loss, end_points = self.criterion(
-            end_points, 6,
-            self.set_criterion,
-            query_points_obj_topk=5
-        )   
-            if 'scst' in end_points.keys():
-                return dict(loss=loss, loss_scst=end_points['loss_scst'])
+                end_points, 6,
+                self.set_criterion,
+                query_points_obj_topk=5
+            )   
+            caption_loss = end_points['loss_caption']
+            if torch.is_tensor(caption_loss):
+                return dict(loss=loss, caption_loss=caption_loss)
             else:
-                return dict(loss=loss, caption_loss=end_points['loss_caption'])
+                return dict(loss=loss, caption_loss=torch.zeros(1))
         # eval
         else:
             self.set_criterion.eval()
             return end_points
-
-
-@MODELS.register_module()
-class DebugCaptioner(nn.Module):
-    def __init__(self, 
-                 backbone=None, 
-                 losses=['boxes', 'labels', 'contrastive_align', 'masks']):
-        super().__init__()
-        self.backbone = build_model(backbone)
-        matcher = HungarianMatcher(1, 0, 2, True)
-        self.set_criterion = SetCriterion(
-                matcher=matcher,
-                losses=losses, eos_coef=0.1, temperature=0.07)
-        self.criterion = compute_hungarian_loss
-
-    def forward(self, input_dict):
-
-        inputs = {
-            'point_clouds': input_dict['point_clouds'].float(), 
-            'text': input_dict['utterances'],                   
-            "offset": input_dict['offset'],
-            "source_xzy": input_dict['source_xzy'],
-            "superpoint": input_dict['superpoint'],
-        }     
-        # inputs.update(input_dict)  # debug
-        end_points = self.backbone(inputs)
-        end_points.update(input_dict)
-        # train
-        if self.training:
-            loss, end_points = self.criterion(
-            end_points, 6,
-            self.set_criterion,
-            query_points_obj_topk=5
-        )
-            return dict(loss=loss, caption_loss=end_points['loss_caption'])
-        # eval
-        else:
-            self.set_criterion.eval()
-            return end_points
-
+        
 
 @MODELS.register_module()
 class DefaultOnlyCaptioner(nn.Module):
@@ -227,7 +194,9 @@ class DefaultOnlyCaptioner(nn.Module):
             "size_gts": input_dict['size_gts'],
             "sem_cls_label": input_dict['sem_cls_label'],
             "superpoint": input_dict['superpoint'],
-            "positive_map": input_dict['positive_map']
+            "positive_map": input_dict['positive_map'],
+            "scan_idx": input_dict['scan_idx'],
+            "gt_box_object_ids": input_dict['gt_box_object_ids']
         }     
 
         end_points = self.backbone(inputs)
@@ -235,15 +204,19 @@ class DefaultOnlyCaptioner(nn.Module):
 
         # train
         if self.training:
-            loss_config = {'reduction': 'none', 'ignore_index': 0}
-            nvocabs = 3433  # lenght of tokneizer
-            o = end_points["caption_logits"][0]
-            t = end_points['caption_target']
-            loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config).reshape(t.shape)  
-            loss = torch.sum(loss_per_word * (t != 0).float()) / torch.sum(
-                torch.sum(t != 0).float() + 1e-6
-            )
-            return dict(loss=loss)
+            if 'scst' in end_points.keys():
+                loss = end_points['scst']
+                return dict(loss=loss)
+            else:
+                loss_config = {'reduction': 'none', 'ignore_index': 0}
+                nvocabs = 3433  # lenght of tokneizer
+                o = end_points["caption_logits"][0]
+                t = end_points['caption_target']
+                loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config).reshape(t.shape)  
+                loss = torch.sum(loss_per_word * (t != 0).float()) / torch.sum(
+                    torch.sum(t != 0).float() + 1e-6
+                )
+                return dict(loss=loss)
         # eval
         else:
             return end_points

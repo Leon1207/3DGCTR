@@ -85,7 +85,7 @@ def parse_predictions(
     pred_sem_cls = np.argmax(sem_cls_probs, -1)
     obj_prob = objectness_probs.detach().cpu().numpy()
 
-    pred_corners_3d_upright_camera = predicted_boxes.detach().cpu().numpy()
+    pred_corners_3d_upright_camera = predicted_boxes.detach().cpu().numpy()  # b, 256, 8, 3
 
     K = pred_corners_3d_upright_camera.shape[1]  # K==num_proposal
     bsize = pred_corners_3d_upright_camera.shape[0]
@@ -104,7 +104,7 @@ def parse_predictions(
                 if len(pc_in_box) < 5:
                     nonempty_box_mask[i, j] = 0
             if nonempty_box_mask[i].sum() == 0:
-                nonempty_box_mask[i, obj_prob[i].argmax()] = 1
+                nonempty_box_mask[i, obj_prob[i].argmax()] = 1  # differences
         # -------------------------------------
 
     if "no_nms" in config_dict and config_dict["no_nms"]:

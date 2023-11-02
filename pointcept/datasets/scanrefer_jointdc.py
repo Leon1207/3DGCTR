@@ -136,8 +136,7 @@ class Joint3DDataset_JointDC(Dataset):
                  split='train',
                  data_root='/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed',
                  transform=None,
-                #  dataset_dict={'scanrefer': 1, 'scannet': 10},  # training on rec
-                 dataset_dict={'scannet': 1},  # training on captions
+                 dataset_dict={'scanrefer': 1, 'scannet': 10, 'scannetdc': 1},  # training on rec
                  test_dataset='scannet',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
@@ -158,9 +157,9 @@ class Joint3DDataset_JointDC(Dataset):
         self.transform = Compose(transform)
         self.use_multiview = use_multiview
         self.data_path = data_root
-        self.butd = butd
-        self.butd_gt = butd_gt
-        self.butd_cls = butd_cls
+        self.butd = False
+        self.butd_gt = False
+        self.butd_cls = False
         self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
             'scannet' in dataset_dict
@@ -244,6 +243,7 @@ class Joint3DDataset_JointDC(Dataset):
             'sr3d+': self.load_sr3dplus_annos,
             'scanrefer': self.load_scanrefer_annos, # scanrefer
             'scannet': self.load_scannet_annos,      # scannet detection augmentation
+            'scannetdc': self.load_scannetdc_annos,
         }
         annos = loaders[dset]()
         if self.overfit:
@@ -366,7 +366,7 @@ class Joint3DDataset_JointDC(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader  # debug
+            for anno in reader[:100]  # debug
             if anno['scene_id'] in scan_ids
         ]
 
@@ -461,6 +461,45 @@ class Joint3DDataset_JointDC(Dataset):
                     'anchors': [],
                     'anchor_ids': [],
                     'dataset': 'scannet'
+                })
+        if self.split == 'train':
+            annos = [
+                anno for a, anno in enumerate(annos)
+                if a not in {965, 977}
+            ]
+        return annos
+
+    # BRIEF scannet detection prompt.
+    def load_scannetdc_annos(self):
+        """Load annotations of scannet."""
+        split = 'train' if self.split == 'train' else 'val'
+        with open('pointcept/datasets/preprocessing/scanrefer/meta_data/scannetv2_%s.txt' % split) as f:
+            scan_ids = [line.rstrip() for line in f]
+
+        annos = []
+        for scan_id in scan_ids:
+            if scan_id not in list(self.scans.keys()):
+                continue
+
+            scan = self.scans[scan_id]
+            # Ignore scans that have no object in our vocabulary
+            keep = np.array([
+                self.label_map[
+                    scan.get_object_instance_label(ind)
+                ] in DC.nyu40id2class
+                for ind in range(len(scan.three_d_objects))
+            ])
+            if keep.any():
+                # this will get populated randomly each time
+                annos.append({
+                    'scan_id': scan_id,
+                    'target_id': [],
+                    'distractor_ids': [],
+                    'utterance': '',
+                    'target': [],
+                    'anchors': [],
+                    'anchor_ids': [],
+                    'dataset': 'scannetdc'
                 })
         if self.split == 'train':
             annos = [
@@ -992,51 +1031,54 @@ class Joint3DDataset_JointDC(Dataset):
 
         # step constract anno (used only for [scannet])
         self.random_utt = False
-        sampled_classes = self._sample_classes(anno['scan_id'])
-        utterance = self._create_scannet_utterance(sampled_classes)
-        
-        # if anno['scan_id'] == 'scene0364_00':
-        #     import pdb; pdb.set_trace()
-        if not self.random_utt:  # detection18 phrase
-            anno['target_id'] = np.where(np.array([
-                self.label_map18[
-                    scan.get_object_instance_label(ind)
-                ] in DC18.nyu40id2class
-                for ind in range(len(scan.three_d_objects)) # scene0364_00 len(scan.three_d_objects) 17
-            ])[:MAX_NUM_OBJ])[0].tolist() 
-        else:
-            anno['target_id'] = np.where(np.array([
-                self.label_map[
-                    scan.get_object_instance_label(ind)
-                ] in DC.nyu40id2class
-                and
-                DC.class2type[DC.nyu40id2class[self.label_map[
-                    scan.get_object_instance_label(ind)
-                ]]] in sampled_classes  # use 18 classes to filter target_id
-                for ind in range(len(scan.three_d_objects))
-            ])[:MAX_NUM_OBJ])[0].tolist()
-        
-        # Target names
-        if not self.random_utt:
-            anno['target'] = [
-                DC18.class2type[DC18.nyu40id2class[self.label_map18[
-                    scan.get_object_instance_label(ind)
-                ]]]
-                if self.label_map18[
-                    scan.get_object_instance_label(ind)
-                ] != 39
-                # else 'other furniture'
-                else "others"
-                for ind in anno['target_id']
-            ]
-        else:
-            anno['target'] = [
-                DC.class2type[DC.nyu40id2class[self.label_map[
-                    scan.get_object_instance_label(ind)
-                ]]]
-                for ind in anno['target_id']
-            ]
-        anno['utterance'] = utterance
+        if (anno['dataset'] == 'scannet') or (anno['dataset'] == 'scannetdc'):
+            
+            if anno['dataset'] == 'scannet':
+                self.random_utt = self.joint_det and np.random.random() > 0.5
+
+            sampled_classes = self._sample_classes(anno['scan_id'])
+            utterance = self._create_scannet_utterance(sampled_classes)
+            
+            if not self.random_utt:  # detection18 phrase
+                anno['target_id'] = np.where(np.array([
+                    self.label_map18[
+                        scan.get_object_instance_label(ind)
+                    ] in DC18.nyu40id2class
+                    for ind in range(len(scan.three_d_objects)) # scene0364_00 len(scan.three_d_objects) 17
+                ])[:MAX_NUM_OBJ])[0].tolist() 
+            else:
+                anno['target_id'] = np.where(np.array([
+                    self.label_map[
+                        scan.get_object_instance_label(ind)
+                    ] in DC.nyu40id2class
+                    and
+                    DC.class2type[DC.nyu40id2class[self.label_map[
+                        scan.get_object_instance_label(ind)
+                    ]]] in sampled_classes  # use 18 classes to filter target_id
+                    for ind in range(len(scan.three_d_objects))
+                ])[:MAX_NUM_OBJ])[0].tolist()
+            
+            # Target names
+            if not self.random_utt:
+                anno['target'] = [
+                    DC18.class2type[DC18.nyu40id2class[self.label_map18[
+                        scan.get_object_instance_label(ind)
+                    ]]]
+                    if self.label_map18[
+                        scan.get_object_instance_label(ind)
+                    ] != 39
+                    # else 'other furniture'
+                    else "others"
+                    for ind in anno['target_id']
+                ]
+            else:
+                anno['target'] = [
+                    DC.class2type[DC.nyu40id2class[self.label_map[
+                        scan.get_object_instance_label(ind)
+                    ]]]
+                    for ind in anno['target_id']
+                ]
+            anno['utterance'] = utterance
    
         # step Point cloud representation
         point_cloud, augmentations, og_color = self._get_pc(anno, scan)
@@ -1176,17 +1218,11 @@ class Joint3DDataset_JointDC(Dataset):
             "gt_box_object_ids": object_ids.astype(np.int64)
         })
 
-        # if anno['scan_id'] == "scene0364_00":
-        #     lst = []
-        #     for ind in anno['target']:
-        #         lst.append(ind)
-        #     print(lst)  # debug
-
         # preprocess tokenizer for dense caption (not in pretrain stage)
         reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))  # [132, 32]
         reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
 
-        if self.split == 'train':
+        if (self.split == 'train') and (anno['dataset'] == 'scannetdc'):
             scene_caption = []
             scan_name = anno['scan_id']
             if scan_name in self.gathered_language:
