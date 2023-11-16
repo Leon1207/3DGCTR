@@ -259,10 +259,10 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
             
             self.scanrefer = SCANREFER['language'][split]
             self.scan_names = SCANREFER['scene_list'][split]
-            # self.scan_names = SCANREFER['scene_list'][split] * 10  # for joint training
-            # self.scan_names = SCANREFER['scene_list'][split][:10]  # debug
-            if split == "train":
-                self.scan_names = SCANREFER['scene_list'][split][:1]  # debug
+
+            # for joint training
+            # if split == "train":
+            #     self.scan_names = SCANREFER['scene_list'][split] * 10
 
             self.split = split
             print(f"kept {len(self.scan_names)} scans out of {len(all_scan_names)}")
@@ -415,7 +415,8 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         raw_sizes = np.zeros((MAX_NUM_OBJ, 3), dtype=np.float32)
         object_ids = np.zeros((MAX_NUM_OBJ,))
         
-        
+        if self.split == "val":
+            np.random.seed(1184)  # fix points in val and test
         point_cloud, choices = pc_util.random_sampling(
             point_cloud, self.num_points, return_choices=True
         )
@@ -514,7 +515,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
                 ' '.join(captions.replace(',', ' ,').split())
                 + ' . not mentioned'
             )
-        # ret_dict["utterances"] = " chair ."  # caption ability
+        # ret_dict["utterances"] = "chair . not mentioned"  # caption ability
 
         all_detected_bboxes = np.zeros((MAX_NUM_OBJ, 6))
         all_detected_bbox_label_mask = np.array([False] * MAX_NUM_OBJ)

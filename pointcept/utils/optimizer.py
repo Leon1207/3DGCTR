@@ -20,7 +20,7 @@ OPTIMIZERS.register_module(module=torch.optim.AdamW, name="AdamW")
 def build_optimizer(cfg, model, param_dicts=None):
     if param_dicts is None:
         cfg.params = model.parameters()
-    elif param_dicts == "onlydc":
+    elif param_dicts == "frozen":
         cfg.params = model.backbone.captioner.parameters()
     else:
         cfg.params = [dict(names=[], params=[], lr=cfg.lr)]

@@ -674,7 +674,7 @@ class CaptionEvaluator(HookBase):
     def __init__(self, 
                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
-        self.test_min_iou = 0.50
+        self.test_min_iou = 0.50  # ability
         self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
         self.criterion = f'CiDEr@{self.test_min_iou}'
         dataset_config = ScannetDatasetConfig_V2C(18)
@@ -763,6 +763,12 @@ class CaptionEvaluator(HookBase):
                 1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
                 25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 43, 44
             ])  # 18 token span
+            # wordidx = np.array([ 
+            #     2, 18, 18
+            # ])
+            # tokenidx = np.array([ 
+            #     1, 3, 4
+            # ])  # captions ability
 
             proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
             proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
@@ -782,7 +788,7 @@ class CaptionEvaluator(HookBase):
 
             # ---- Checkout bounding box ious and semantic logits
             good_bbox_masks = match_box_ious > self.test_min_iou     # batch, nqueries
-            # class_id = end_points["last_sem_cls_scores"].argmax(-1)
+            class_id = end_points["last_sem_cls_scores"].argmax(-1)
             good_bbox_masks &= end_points["last_sem_cls_scores"].argmax(-1) != (
                 end_points["last_sem_cls_scores"].shape[-1] - 1
             )

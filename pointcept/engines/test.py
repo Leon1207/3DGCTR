@@ -19,6 +19,7 @@ from pointcept.datasets.utils import collate_fn
 import pointcept.utils.comm as comm
 from pointcept.utils.grounding_evaluator import GroundingEvaluator
 from pointcept.models.losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
+import time
 
 TEST = Registry("test")
 import os 
@@ -338,6 +339,7 @@ class GroundingTester(object):
             # STEP Forward pass
             with torch.no_grad():
                 end_points = model(inputs)
+                # self.count_latency(inputs, model)  # counting latency
 
             # STEP Compute loss 
             _, end_points = criterion(
@@ -395,6 +397,19 @@ class GroundingTester(object):
     @staticmethod
     def collate_fn(batch):
         return collate_fn(batch)
+    
+    def count_latency(self, args, model):
+        n_runs = 500
+        with torch.no_grad():
+            for _ in range(10):  # warm up.
+                model(args)
+            start_time = time.time()
+            for _ in range(n_runs):
+                model(args)
+                torch.cuda.synchronize()
+            time_taken = time.time() - start_time
+        print(f'Latency (s): {float(time_taken) / float(n_runs)}')
+
 
 from pointcept.engines.hooks.evaluator import prepare_corpus as prepare_corpus_
 from pointcept.engines.hooks.evaluator import _iou3d_par as _iou3d_par_

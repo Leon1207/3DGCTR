@@ -1,48 +1,33 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-# bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
-
-batch_size = 6
-batch_size_val = 6
-batch_size_test = 6
-
+batch_size = 64 # bs: total bs in all gpus  80
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-eval_freq = 10
+batch_size_val = 16
+batch_size_test = 16
+eval_freq = 3
 find_unused_parameters = True
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-frozendet/model/model_best.pth"
 
 # model settings
 model = dict(
-    type="DefaultOnlyCaptioner",
+    type="DefaultGrounder",
     backbone=dict(
-        type="eda_ptv2_dc",
-        butd=False,  # not used butd
-        scst=True
+        type="eda_ptv2_dets3d",
+        butd=False  # not used butd
     ),
+    losses=['boxes', 'labels', 'contrastive_align']
 )
 
 # scheduler settings
-epoch = 400
-eval_epoch = 400
-optimizer = dict(type="AdamW", lr=1e-6, weight_decay=0.0005)
-param_dicts="onlydc"
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+epoch = 100
+eval_epoch = 100
+optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
-dataset_type = "Joint3DDataset_JointDC_v2c"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
-
-hooks = [
-    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    dict(type="CheckpointLoader"),
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator"),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
+dataset_type = "Joint3DDataset"
+data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
     num_classes=13,
@@ -143,6 +128,18 @@ data = dict(
     )
 )
 
+hooks = [
+    dict(type="CheckpointLoader"),
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="GroundingEvaluator", losses=['boxes', 'labels', 'contrastive_align']),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
+
 # tester
-test = dict(type="DetTester")
+test = dict(
+    type="GroundingTester",
+    losses=['boxes', 'labels', 'contrastive_align']
+)
 

@@ -28,8 +28,8 @@ from pointcept.models.threedreftr.captioner_dcc.captioner import Captioner
 from pointcept.models.threedreftr.captioner_dcc.scst import SCST_Training
 
 
-@MODELS.register_module("eda_ptv2_dc")
-class EDA_dc(nn.Module):
+@MODELS.register_module("eda_ptv2_dc_cross")
+class EDA_dc_cross(nn.Module):
     """
     3D language grounder.
 
@@ -223,7 +223,6 @@ class EDA_dc(nn.Module):
         points_features = end_points['fp2_features']
         text_feats = end_points['text_feats']
         text_padding_mask = end_points['text_attention_mask']
-        end_points['vs_features'] = end_points['fp2_features']
 
         superpoint = data_dict['superpoint'] 
         end_points['superpoints'] = superpoint  # avoid bugs
@@ -248,6 +247,7 @@ class EDA_dc(nn.Module):
         points_features = points_features.contiguous()
         end_points["text_memory"] = text_feats
         end_points['seed_features'] = points_features
+        end_points['vs_features'] = end_points['seed_features']
         
         # STEP 4. text projection --> 64
         if self.contrastive_align_loss:

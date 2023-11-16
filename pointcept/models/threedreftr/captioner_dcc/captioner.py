@@ -186,7 +186,7 @@ class Captioner(nn.Module):
         # batch x nprop x k
         k_near_indice = center_distance.topk(k=128, largest=False, dim=-1).indices  # [8, 256, 128]
         k_near_context_feature = proposal_dimension_select(  
-            self.context_projector(end_points['fp2_features'].transpose(-2, -1)), 
+            self.context_projector(end_points['vs_features'].transpose(-2, -1)), 
             k_near_indice.reshape(batch, -1)
         )   # batch x (nprop x k) x channel  [8, 32768, 256]
         k_near_context_feature = k_near_context_feature.reshape(

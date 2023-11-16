@@ -196,10 +196,16 @@ class Trainer(TrainerBase):
                         self.train_loader.batch_sampler.set_epoch(self.epoch)
 
                 self.model.train()
-                if self.cfg.model.type == "DefaultOnlyCaptioner":
-                    for m in self.model.modules():
-                        if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)) and m not in self.model.backbone.captioner.modules():
-                            m.eval()
+                if self.cfg.frozenbn:
+                    if comm.get_world_size() > 1:
+                        for m in self.model.module.modules():
+                            if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)) and m not in self.model.module.backbone.captioner.modules():
+                                m.eval()
+                    else:
+                        for m in self.model.modules():
+                            if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)) and m not in self.model.backbone.captioner.modules():
+                                m.eval()
+                            
                 self.data_iterator = enumerate(self.train_loader)
                 self.before_epoch()
                 # => run_epoch
@@ -209,7 +215,7 @@ class Trainer(TrainerBase):
                     # => run_step
                     self.run_step()
                     # => after_step
-                    self.after_step()
+                    self.after_step()  # debug
                 # => after epoch
                 self.after_epoch()
             # => after train
@@ -227,6 +233,16 @@ class Trainer(TrainerBase):
         if self.cfg.enable_amp:
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
+
+            if self.cfg.joint:  # joint training
+                cur_iter = self.comm_info["iter"] + 1
+                total_iter = len(self.train_loader)
+                if cur_iter == int(total_iter * 0.3):
+                    for pd in self.optimizer.param_groups:
+                        pd['lr'] = pd['lr'] * 0.1
+                if cur_iter == int(total_iter * 0.5):
+                    for pd in self.optimizer.param_groups:
+                        pd['lr'] = pd['lr'] * 0.1
 
             # When enable amp, optimizer.step call are skipped if the loss scaling factor is too large.
             # Fix torch warning scheduler step before optimizer step.
@@ -247,7 +263,7 @@ class Trainer(TrainerBase):
         if self.cfg.sync_bn:
             model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
         # only training dc
-        if self.cfg.model.type == "DefaultOnlyCaptioner":
+        if self.cfg.frozen:
             for param in model.parameters():
                 param.requires_grad = False
             for param in model.backbone.captioner.parameters():

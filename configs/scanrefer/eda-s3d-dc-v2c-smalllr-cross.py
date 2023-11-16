@@ -6,24 +6,19 @@ batch_size = 6
 batch_size_val = 6
 batch_size_test = 6
 
-# batch_size = 64
-# batch_size_val = 16
-# batch_size_test = 16
-
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-eval_freq = 1
+eval_freq = 10
 find_unused_parameters = True
-# weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_v2c/model/model_best.pth"
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-frozendet/model/model_best.pth"
+# weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"
 
 # model settings
 model = dict(
     type="DefaultCaptioner",
     backbone=dict(
-        type="eda_ptv2_dc",
+        type="eda_ptv2_dc_cross",
         butd=False  # not used butd
     ),
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
@@ -32,16 +27,17 @@ model = dict(
 # scheduler settings
 epoch = 400
 eval_epoch = 400
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+optimizer = dict(type="AdamW", lr=2e-6, weight_decay=0.0005)
+param_dicts = [dict(keyword="captioner", lr=2e-4, weight_decay=0.0005)]
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 hooks = [
-    # dict(type="CheckpointLoader", keywords='module.', replacement=''),  # one gpu
-    dict(type="CheckpointLoader"),  # multi gpus
+    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    dict(type="CheckpointLoader"),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
