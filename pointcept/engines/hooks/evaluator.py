@@ -832,6 +832,39 @@ class CaptionEvaluator(HookBase):
             # bc = box_corners[0][good_bbox_masks[0].bool()]
             # obj_id = match_box_idxs[0][good_bbox_masks[0].bool()]
             # scene_id = str(SCANREFER['scene_list']['val'][batch_data["scan_idx"][0]])
+            # color_list = [
+            #     [255, 0, 0],
+            #     [0, 255, 0],
+            #     [0, 0, 255],
+            #     [255, 255, 0],
+            #     [255, 0, 255],
+            #     [0, 255, 0],
+            #     [128, 128, 96],
+            #     [96, 128, 128],
+            #     [128, 96, 128],
+            #     [96, 128, 96],
+            #     [54, 128, 256],
+            #     [128, 54, 256],
+            #     [128, 256, 54],
+            #     [98, 158, 68],
+            #     [64, 32, 45],
+            #     [13, 68, 15],
+            #     [31, 25, 66],
+            #     [75, 85, 36],
+            #     [136, 134, 212],
+            #     [132, 61, 212],
+            #     [34, 62, 230],
+            #     [61, 36, 14],
+            #     [38, 133, 45],
+            #     [35, 121, 198],
+            #     [35, 199, 244],
+            #     [89, 135, 142],
+            #     [123, 32, 121], 
+            #     [34, 32, 12],
+            #     [88, 76, 1],
+            #     [121, 0, 33], 
+            #     [67, 131, 36]
+            # ]
 
             # wandb.log({
             #         "point_scene": wandb.Object3D({
@@ -849,7 +882,7 @@ class CaptionEvaluator(HookBase):
             #                 [  # predicted boxes
             #                     {
             #                         "corners": c.tolist(),
-            #                         "label": scene_id + " : " + str(obj_id[i].item()),
+            #                         "label": str(obj_id[i].item()),
             #                         "color": [255, 0, 0]
             #                     }
             #                     for i, c in enumerate(bc)

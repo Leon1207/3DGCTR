@@ -35,15 +35,15 @@ epoch = 400
 eval_epoch = 400
 optimizer = dict(type="AdamW", lr=2e-6, weight_decay=0.0005)
 param_dicts="frozen"
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.25, 0.5])
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 hooks = [
-    dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    # dict(type="CheckpointLoader"),
+    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    dict(type="CheckpointLoader"),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="CaptionEvaluator"),
