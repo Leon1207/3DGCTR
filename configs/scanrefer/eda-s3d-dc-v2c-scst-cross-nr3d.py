@@ -1,33 +1,50 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 64 # bs: total bs in all gpus  80
+# bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
+
+batch_size = 12
+batch_size_val = 12
+batch_size_test = 12
+
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
-batch_size_val = 16
-batch_size_test = 16
-eval_freq = 3
+eval_freq = 10
 find_unused_parameters = True
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-nr3d/model/model_best.pth"
+frozen = True
+frozenbn = True
 
 # model settings
 model = dict(
-    type="DefaultGrounder",
+    type="DefaultOnlyCaptioner",
     backbone=dict(
-        type="eda_ptv2_dets3d",
-        butd=False  # not used butd
+        type="eda_ptv2_dc_cross",
+        butd=False,  # not used butd
+        scst=True
     ),
-    losses=['boxes', 'labels', 'contrastive_align']
 )
 
 # scheduler settings
-epoch = 100
-eval_epoch = 100
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+epoch = 400
+eval_epoch = 400
+optimizer = dict(type="AdamW", lr=5e-6, weight_decay=0.0005)
+param_dicts="frozen"
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.25, 0.5])
 
 # dataset settings
-dataset_type = "Joint3DDataset_Pretrain"
-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
+dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
+data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+
+hooks = [
+    dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    # dict(type="CheckpointLoader"),
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="CaptionEvaluator"),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
 
 data = dict(
     num_classes=13,
@@ -128,18 +145,6 @@ data = dict(
     )
 )
 
-hooks = [
-    dict(type="CheckpointLoader"),
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="DetEvaluator", losses=['boxes', 'labels', 'contrastive_align']),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
-
 # tester
-test = dict(
-    type="DetTester",
-    losses=['boxes', 'labels', 'contrastive_align']
-)
+test = dict(type="DetTester")
 

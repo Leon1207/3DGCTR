@@ -53,7 +53,7 @@ def main_worker(cfg):
                 if comm.get_world_size() > 1:
                     name = "module." + name  # xxx.xxx -> module.xxx.xxx
             new_state_dict[name] = value
-        model.load_state_dict(new_state_dict, strict=False)
+        model.load_state_dict(new_state_dict, strict=True)
         logger.info("=> Loaded weight '{}' (epoch {})".format(cfg.weight, checkpoint['epoch']))
         cfg.test_epoch = checkpoint['epoch']
     else:

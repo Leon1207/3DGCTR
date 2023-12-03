@@ -2,9 +2,9 @@ _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
 # bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
 
-batch_size = 6
-batch_size_val = 6
-batch_size_test = 6
+batch_size = 12
+batch_size_val = 12
+batch_size_test = 12
 
 mix_prob = 0.8
 enable_amp = True
@@ -33,17 +33,17 @@ model = dict(
 # scheduler settings
 epoch = 400
 eval_epoch = 400
-optimizer = dict(type="AdamW", lr=2e-6, weight_decay=0.0005)
+optimizer = dict(type="AdamW", lr=5e-6, weight_decay=0.0005)
 param_dicts="frozen"
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.25, 0.5])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 hooks = [
-    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    dict(type="CheckpointLoader"),
+    dict(type="CheckpointLoader", keywords='module.', replacement=''),
+    # dict(type="CheckpointLoader"),
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="CaptionEvaluator"),

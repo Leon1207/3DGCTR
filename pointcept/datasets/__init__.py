@@ -5,6 +5,7 @@ from .scannet import ScanNetDataset, ScanNet200Dataset
 from .scanrefer import Joint3DDataset
 from .scanrefer_v2c import Joint3DDataset_v2c
 from .scanrefer_jointdc_v2c import Joint3DDataset_JointDC_v2c
+from .nr3d_jointdc_v2c import Joint3DDataset_JointDC_v2c_nr3d
 from .scanrefer_pretrain import Joint3DDataset_Pretrain
 from .scanrefer_jointdc import Joint3DDataset_JointDC
 from .scanrefer_debug import Joint3DDataset_debug
