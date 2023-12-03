@@ -1,6 +1,6 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 6 # bs: total bs in all gpus  32
+batch_size = 48 # bs: total bs in all gpus  32
 mix_prob = 0.8
 enable_amp = True
 num_worker = 4
@@ -8,9 +8,9 @@ batch_size_val = 12
 batch_size_test = 12
 eval_freq = 1
 find_unused_parameters = True
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr-sp-v2c/model/model_best.pth"
-# weight = " /userhome/backup_lhj/lhj/pointcloud/EDA-master/log/scanrefer/scanrefer_2gpu/1681527693/ckpt_epoch_70.pth"
-# weight = "/userhome/lyd/3dvlm/log/ScanRefer_single_53_83.pth"
+weight = "/userhome/lyd/3dvlm/log/ScanRefer_single_53_83.pth"  # 53.83
+# weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_single_40_23.pth"  # 54.43
+# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd"
 
 # testing grounding
 # weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"

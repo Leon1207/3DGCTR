@@ -5,8 +5,8 @@ mix_prob = 0.8
 empty_cache = False
 enable_amp = True
 num_worker = 8
-batch_size_val = 16  # 8
-batch_size_test = 16  # 8
+batch_size_val = 8  # 8
+batch_size_test = 8  # 8
 find_unused_parameters = True
 eval_freq = 3 
 

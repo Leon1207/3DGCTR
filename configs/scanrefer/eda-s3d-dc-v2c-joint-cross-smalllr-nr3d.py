@@ -8,8 +8,7 @@ batch_size_val = 8
 batch_size_test = 8
 eval_freq = 1
 find_unused_parameters = True
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d_decay/model/model_best.pth"
+weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
 
 hooks = [
     dict(type="CheckpointLoader"), 
@@ -31,11 +30,11 @@ model = dict(
 )
 
 # scheduler settings
-epoch = 100
-eval_epoch = 100
-optimizer = dict(type="AdamW", lr=2e-6, weight_decay=0.0005)
-param_dicts = [dict(keyword="captioner", lr=2e-4, weight_decay=0.0005)]
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+epoch = 20
+eval_epoch = 20
+optimizer = dict(type="AdamW", lr=1e-6, weight_decay=0.0005)
+param_dicts = [dict(keyword="captioner", lr=1e-4, weight_decay=0.0005)]
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
@@ -174,7 +173,7 @@ data = dict(
 
 # tester
 test = dict(
-    type="DetTester",
+    type="CaptionTester",
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 

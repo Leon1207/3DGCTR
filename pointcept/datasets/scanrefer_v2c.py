@@ -55,7 +55,9 @@ class Joint3DDataset_v2c(Dataset):
                  data_root='./',
                  transform=None,
                  dataset_dict={'scanrefer': 1, 'scannet': 10},
-                 test_dataset='scanrefer',  # det or rec, debug
+                 test_dataset='scanrefer',  # det or rec
+                #  dataset_dict={'nr3d': 1, 'scannet': 10},
+                #  test_dataset='nr3d',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
@@ -75,10 +77,10 @@ class Joint3DDataset_v2c(Dataset):
         self.transform = Compose(transform)
         self.use_multiview = use_multiview
         self.data_path = data_root
-        self.visualization_superpoint = False  # manually set this to True to debug
-        self.butd = False  # butd = false
-        self.butd_gt = False
-        self.butd_cls = False
+        self.visualization_superpoint = False
+        self.butd = butd 
+        self.butd_gt = butd_gt
+        self.butd_cls = butd_cls
         self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
             'scannet' in dataset_dict
@@ -223,8 +225,8 @@ class Joint3DDataset_v2c(Dataset):
                     'anchors': [],
                     'dataset': 'nr3d'
                 }
-                for line in csv_reader
-                if line[headers['scan_id']] in scan_ids
+                for i, line in enumerate(csv_reader)
+                if line[headers['scan_id']] in scan_ids # and i < 100  # debug
                 # and
                 # str(line[headers['mentions_target_class']]).lower() == 'true' # NOTE BUTD ignores 5% of hard samples
                 and
@@ -281,7 +283,7 @@ class Joint3DDataset_v2c(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader  # debug
+            for anno in reader#[:100]  # debug
             if anno['scene_id'] in scan_ids
         ]
 

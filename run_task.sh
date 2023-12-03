@@ -12,10 +12,10 @@ cd /userhome/lyd/Pointcept/
 # s3d-pretrain
 # sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-pretrain -n eda-s3d-pretrain-view
 # nr3d-joint
-# sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-dc-v2c-joint-cross-smalllr-nr3d -n eda-dc-v2ctraining-joint10-cross-smalllr2-nr3d
+# sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-dc-v2c-joint-cross-smalllr-nr3d -n eda-dc-v2ctraining-joint10-cross-smalllr2-nr3d2
 # nr3d-scst
 # sh scripts/train.sh -p python -g 1 -d scanrefer -c eda-s3d-dc-v2c-scst-cross-nr3d -n eda-dc-v2ctraining-joint10-cross-smalllr2-scst3-nr3d
 # eda-rec-res
-sh scripts/train.sh -p python -g 4 -d scanrefer -c semseg-3dreftr-ptv2maxpool-v2c-eda -n 3dreftr-sp-v2c-nobutd
+# sh scripts/train.sh -p python -g 4 -d scanrefer -c semseg-3dreftr-ptv2maxpool-v2c-eda -n 3dreftr-sp-v2c-nobutd
 # eda-mle
-# sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-dc-v2c-joint-cross-smalllr-eda -n eda-dc-v2ctraining-joint10-cross-smalllr2-eda
+sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-dc-v2c-joint-cross-smalllr-eda -n eda-dc-v2ctraining-joint10-cross-smalllr2-eda2

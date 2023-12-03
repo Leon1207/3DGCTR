@@ -426,7 +426,7 @@ class CaptionTester(object):
     def __init__(self, 
                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
-        self.test_min_iou = 0.25
+        self.test_min_iou = 0.50
         self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
         dataset_config = ScannetDatasetConfig_V2C(18)
         # Used for AP calculation

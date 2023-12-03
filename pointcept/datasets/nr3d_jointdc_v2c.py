@@ -16,9 +16,10 @@ from pointcept.datasets.box_util import (flip_axis_to_camera_np, flip_axis_to_ca
                             get_3d_box_batch_np, get_3d_box_batch_tensor)
 from pointcept.datasets.pc_util import scale_points, shift_scale_points
 from .builder import DATASETS
+from transformers import RobertaTokenizerFast
+
 from typing import List, Dict
 from collections import defaultdict
-from transformers import RobertaTokenizerFast
 
 IGNORE_LABEL = -100
 MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
@@ -48,7 +49,6 @@ SCANREFER = {
     )
 }
 vocabulary = SCANREFER['vocabulary']
-# embeddings = pickle.load(open(os.path.join(DATA_ROOT, 'glove.p'), "rb"))
 
 
 class ScanReferTokenizer:
@@ -215,30 +215,32 @@ class DatasetConfig(object):
 
         return np.concatenate([new_centers, new_lengths], axis=1)
 
+
 @DATASETS.register_module()
 class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
+
     def __init__(self,
-        split="train",
-        data_root='/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/',
-        transform=None,
-        dataset_config=DatasetConfig(),
-        num_points=50000,
-        use_color=True,  # False?
-        use_normal=False,
-        use_multiview=False,
-        use_height=False,
-        augment=False,
-        test_mode=False, 
-        test_cfg=None, 
-        loop=1
-    ):
+                split="train",
+                data_root='/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/',
+                transform=None,
+                dataset_config=DatasetConfig(),
+                num_points=50000,
+                use_color=True,
+                use_normal=False,
+                use_multiview=False,
+                use_height=False,
+                augment=False,
+                test_mode=False, 
+                test_cfg=None, 
+                loop=1
+            ):
 
         self.dataset_config = dataset_config
         self.max_des_len = 32
         
+        # initialize tokenizer and set tokenizer's `padding token` to `eos token`
         self.tokenizer = ScanReferTokenizer(SCANREFER['vocabulary']['word2idx'])
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/nr3d_result"
         
         assert split in ["train", "val"]
         
@@ -257,6 +259,7 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
             
             self.scanrefer = SCANREFER['language'][split]
             self.scan_names = SCANREFER['scene_list'][split]
+            # self.scan_names = self.scan_names[:10]  # debug
 
             # for joint training
             if split == "train":
@@ -280,10 +283,6 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
         ]
         
         self.gathered_language = self.preprocess_and_gather_language()
-        
-        with open(os.path.join(self.checkpoint_dir, 'gathered_scanrefer.json'), 'w') as f:
-            json.dump(self.gathered_language, f, indent=4)
-        
         self.multiview_data = {}
 
     def default_dict_factory(self):
@@ -302,6 +301,7 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
         
         return gathered_language
     
+
     def _get_token_positive_map(self, captions, targets):
         """Return correspondence of boxes to tokens."""
         # Token start-end span in characters
@@ -366,8 +366,8 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
         return len(self.scan_names)
 
     def __getitem__(self, idx):
-        
-        scan_name = self.scan_names[idx]
+
+        scan_name = self.scan_names[idx] # len(self.scan_names) 562
         mesh_vertices = np.load(
             os.path.join(self.data_path, scan_name) + "_aligned_vert.npy"
         )
@@ -413,15 +413,11 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
         MAX_NUM_OBJ = self.dataset_config.max_num_obj
         target_bboxes = np.zeros((MAX_NUM_OBJ, 6), dtype=np.float32)
         target_bboxes_mask = np.zeros((MAX_NUM_OBJ), dtype=np.float32)
-        angle_classes = np.zeros((MAX_NUM_OBJ,), dtype=np.int64)
-        angle_residuals = np.zeros((MAX_NUM_OBJ,), dtype=np.float32)
         raw_sizes = np.zeros((MAX_NUM_OBJ, 3), dtype=np.float32)
-        raw_angles = np.zeros((MAX_NUM_OBJ,), dtype=np.float32)
         object_ids = np.zeros((MAX_NUM_OBJ,))
         
         if self.split == "val":
             np.random.seed(1184)  # fix points in val and test
-        
         point_cloud, choices = pc_util.random_sampling(
             point_cloud, self.num_points, return_choices=True
         )
@@ -476,12 +472,6 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
         )
         box_sizes_normalized = box_sizes_normalized.squeeze(0)
 
-        box_corners = self.dataset_config.box_parametrization_to_corners_np(
-            box_centers[None, ...],
-            raw_sizes.astype(np.float32)[None, ...],
-            raw_angles.astype(np.float32)[None, ...],
-        )
-        box_corners = box_corners.squeeze(0)
         # HACK: store the instance index
         object_ids[:instance_bboxes.shape[0]] = instance_bboxes[:, -1]
         
@@ -491,6 +481,12 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
                 'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
                 'others'
             ]
+        # captions = [
+        #         'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
+        #         'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
+        #         'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
+        #         'other furniture'
+        #     ]
         captions = ' . '.join(captions)
 
         targets = [self.dataset_config.class2type[
@@ -520,6 +516,7 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
                 ' '.join(captions.replace(',', ' ,').split())
                 + ' . not mentioned'
             )
+        # ret_dict["utterances"] = "chair . not mentioned"  # caption ability
 
         all_detected_bboxes = np.zeros((MAX_NUM_OBJ, 6))
         all_detected_bbox_label_mask = np.array([False] * MAX_NUM_OBJ)
@@ -547,14 +544,15 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
         ret_dict["language_dataset"] = "scanrefer"
         ret_dict["point_instance_label"] = instance_labels.astype(np.int64)
 
+        # caption label
         reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))
         reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
 
-        # caption label
         if self.split == 'train':
-             
+            
             scene_caption = []
             if scan_name in self.gathered_language:
+                
                 for instance_id in instance_bboxes[:, -1]:
                     if instance_id not in self.gathered_language[scan_name]:
                         caption = ''
@@ -579,9 +577,9 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
         ret_dict['reference_tokens'] = reference_tokens.astype(np.int64)
         ret_dict['reference_masks'] = reference_masks.astype(np.float32)
         ret_dict["scan_idx"] = np.array(idx).astype(np.int64)
-    
+        
         return ret_dict
-
+    
 
 # BRIEF Construct position label(map)
 def get_positive_map(tokenized, tokens_positive):
@@ -612,3 +610,12 @@ def get_positive_map(tokenized, tokens_positive):
 
     positive_map = positive_map / (positive_map.sum(-1)[:, None] + 1e-12)
     return positive_map.numpy()
+
+
+# if __name__ == '__main__':
+#     dataset = Joint3DDataset_JointDC_v2c()
+#     i = 0
+#     while True:
+#         print(i)
+#         dataset.__getitem__(i)
+#         i += 1

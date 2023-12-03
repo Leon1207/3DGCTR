@@ -29,12 +29,10 @@ from .encoder_decoder_layers import (
 from torch_scatter import scatter_mean
 from .pointnet2 import pointnet2_utils
 from pointcept.models.builder import MODELS
-from pointcept.models.threedreftr.captioner_dcc.captioner import Captioner
-from pointcept.models.threedreftr.captioner_dcc.scst import SCST_Training
 
 
-@MODELS.register_module("eda_dc_cross")
-class EDA_dc_cross(nn.Module):
+@MODELS.register_module("3dreftr_eda")
+class ThreeDRefTR_SP(nn.Module):
     """
     3D language grounder.
 
@@ -57,7 +55,7 @@ class EDA_dc_cross(nn.Module):
                  num_queries=256,
                  num_decoder_layers=6, self_position_embedding='loc_learned',
                  contrastive_align_loss=True,
-                 d_model=288, butd=False, pointnet_ckpt=None, scst=False, # butd
+                 d_model=288, butd=True, pointnet_ckpt=None,  # butd
                  data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
                  self_attend=True):
         """Initialize layers."""
@@ -118,6 +116,23 @@ class EDA_dc_cross(nn.Module):
         )
         self.cross_encoder = BiEncoder(bi_layer, 3)
 
+        # Mask Feats Generation layer
+        self.x_mask = nn.Sequential(
+            nn.Conv1d(d_model, d_model * 2, 1), 
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model * 2, 1),
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model, 1)
+            )
+        self.x_query = nn.Sequential(
+            nn.Conv1d(d_model, d_model * 2, 1), 
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model * 2, 1),
+            nn.ReLU(), 
+            nn.Conv1d(d_model * 2, d_model, 1)
+            )
+        self.super_grouper = pointnet2_utils.QueryAndGroup(radius=0.2, nsample=2, use_xyz=False, normalize_xyz=True)
+
         # Query initialization
         self.points_obj_cls = PointsObjClsModule(d_model)
         self.gsample_module = GeneralSamplingModule()
@@ -165,11 +180,6 @@ class EDA_dc_cross(nn.Module):
                 nn.Linear(d_model, 64)
             )
 
-        # Caption head
-        self.captioner = Captioner(scst=scst)
-        self.scst_trainging = scst  # scst
-        self.scst_model = SCST_Training()
-
         # Init
         self.init_bn_momentum()
     
@@ -182,7 +192,6 @@ class EDA_dc_cross(nn.Module):
         end_points['seed_inds'] = end_points['fp2_inds']
         end_points['seed_xyz'] = end_points['fp2_xyz']
         end_points['seed_features'] = end_points['fp2_features']
-        end_points['vs_features'] = end_points['seed_features']
         
         # step 2. Text encoder
         tokenized = self.tokenizer.batch_encode_plus(
@@ -221,6 +230,13 @@ class EDA_dc_cross(nn.Module):
         end_points['query_points_feature'] = features  # (B, F, V)
         end_points['query_points_sample_inds'] = sample_inds  # (B, V)
         return end_points
+    
+    # segmentation prediction
+    def _seg_seeds_prediction(self, query, mask_feats, end_points, prefix=''):
+        ## generate seed points masks
+        pred_mask_seeds = torch.einsum('bnd,bdm->bnm', query, mask_feats)
+        ## mapping seed points masks to superpoints masks
+        return pred_mask_seeds
 
     # BRIEF forward.
     def forward(self, data_dict):
@@ -245,9 +261,6 @@ class EDA_dc_cross(nn.Module):
         points_features = end_points['fp2_features']
         text_feats = end_points['text_feats']
         text_padding_mask = end_points['text_attention_mask']
-
-        superpoint = data_dict['superpoint'] 
-        end_points['superpoints'] = superpoint  # avoid bugs
         
         # STEP 2. Box encoding
         if self.butd:
@@ -289,6 +302,18 @@ class EDA_dc_cross(nn.Module):
                 self.contrastive_align_projection_text(text_feats), p=2, dim=-1
             )
             end_points['proj_tokens'] = proj_tokens     # ([B, L, 64])
+
+        # STEP 4.1 Mask Feats Generation
+        mask_feats = self.x_mask(points_features).float()  # [B, 288, 1024]
+        superpoint = data_dict['superpoint']  # [B, 50000]
+        end_points['superpoints'] = superpoint
+        source_xzy = data_dict['source_xzy'].contiguous()  # [B, 50000, 3]
+        super_features = []
+        for bs in range(source_xzy.shape[0]):
+            super_xyz = scatter_mean(source_xzy[bs], superpoint[bs], dim=0).unsqueeze(0).float()  # [1, super_num, 3]
+            grouped_feature = self.super_grouper(points_xyz[bs].unsqueeze(0), super_xyz, mask_feats[bs].unsqueeze(0))  # [1, 288, super_num, nsample]
+            super_feature = F.max_pool2d(grouped_feature, kernel_size=[1, grouped_feature.size(3)]).squeeze(-1).squeeze(0)  # [288, super_num]
+            super_features.append(super_feature)
 
         # STEP 5. Query Points Generation
         end_points = self._generate_queries(
@@ -360,27 +385,42 @@ class EDA_dc_cross(nn.Module):
 
             query_last = query
 
-        # caption head
-        if "reference_tokens" in data_dict.keys():
-            end_points['reference_tokens'] = data_dict['reference_tokens']
-            end_points['reference_masks'] = data_dict['reference_masks']
-            end_points['query_last'] = query_last
-            cls_prob = F.softmax(end_points['last_sem_cls_scores'], dim=-1)
-            end_points['objectness_prob'] = 1 - cls_prob[..., -1]
-            if self.training:
-                if self.scst_trainging:
-                    greedy_caption, beam_caption, data_dict, assignments =\
-                        self.captioner(end_points, data_dict, is_eval=False)
-                    scst_loss = self.scst_model(greedy_caption, beam_caption, data_dict, assignments)
-                    end_points['scst'] = 5 * scst_loss
-                else:
-                    outputs, prefix_tokens, annotated_proposal, gt_box_cap_label =\
-                        self.captioner(end_points, data_dict, is_eval=False)
-                    end_points['caption_logits'] = outputs.logits[:, prefix_tokens.shape[2] - 1: -1],
-                    end_points['caption_target'] = gt_box_cap_label[annotated_proposal == 1].long()
-            else:
-                lang_cap = self.captioner(end_points, data_dict, is_eval=True)
-                end_points['lang_cap'] = lang_cap
+        # step Seg Prediction head
+        query_last = self.x_query(query_last.transpose(1, 2)).transpose(1, 2)
+        pred_masks = []
+        for bs in range(query.shape[0]):
+            pred_mask = self._seg_seeds_prediction(
+                query_last[bs].unsqueeze(0),                                  # ([1, F=256, V=288])
+                super_features[bs].unsqueeze(0),                             # ([1, F=288, V=super_num])
+                end_points=end_points,  # 
+                prefix=prefix
+            ).squeeze(0)  
+            pred_masks.append(pred_mask)
+
+        end_points['last_pred_masks'] = pred_masks  # [B, 256, super_num]
+
+        # debug
+        # wordidx = np.array([
+        #     0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 8, 9, 10, 11,
+        #     12, 13, 13, 14, 15, 16, 16, 17, 17, 18, 18
+        # ])  # 18+1（not mentioned）
+        # tokenidx = np.array([
+        #     1, 2, 3, 5, 7, 9, 11, 13, 15, 17, 18, 19, 21, 23,
+        #     25, 27, 29, 31, 32, 34, 36, 38, 39, 41, 42, 44, 45
+        # ])  # 18 token span
+        # proj_tokens = end_points['proj_tokens']  # (B, tokens, 64)
+        # proj_queries = end_points['last_proj_queries']  # (B, Q, 64)
+        # sem_scores = torch.matmul(proj_queries, proj_tokens.transpose(-1, -2))
+        # sem_scores_ = sem_scores / 0.07  # (B, Q, tokens)
+        # sem_scores = torch.zeros(sem_scores_.size(0), sem_scores_.size(1), 256)
+        # sem_scores = sem_scores.to(sem_scores_.device)
+        # sem_scores[:, :sem_scores_.size(1), :sem_scores_.size(2)] = sem_scores_
+
+        # sem_cls = torch.zeros_like(sem_scores)[..., :19] # ([B, 256, 19])
+        # for w, t in zip(wordidx, tokenidx):
+        #     sem_cls[..., w] += sem_scores[..., t]
+
+        # class_id = sem_cls.argmax(-1)
 
         return end_points
 

@@ -2068,7 +2068,7 @@ class DetEvaluator(HookBase):
 
         K2 = center_label.shape[1]  # K2==MAX_NUM_OBJ
         gt_corners_3d_upright_camera = np.zeros((bsize, K2, 8, 3))
-        gt_center_upright_camera = self.flip_axis_to_camera(center_label[:, :, 0:3].detach().cpu().numpy())
+        gt_center_upright_camera = flip_axis_to_camera(center_label[:, :, 0:3].detach().cpu().numpy())
         for i in range(bsize):
             for j in range(K2):
                 if box_label_mask[i, j] == 0:
