@@ -9,9 +9,10 @@ batch_size_test = 12
 eval_freq = 1
 find_unused_parameters = True
 # weight = "/userhome/lyd/3dvlm/log/ScanRefer_single_53_83.pth"  # 53.83
-weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_single_40_23.pth"  # 54.43
+# weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_single_40_23.pth"  # 54.43
 # weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd/model/model_best.pth"
 # weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda2/model/model_best.pth"
+weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_40_76.pth"
 
 # testing grounding
 # weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"
@@ -21,8 +22,8 @@ hooks = [
     dict(type="CheckpointLoader"), 
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
-    # dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
-    dict(type="GroundingEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    # dict(type="GroundingEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
     dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False)
 ]
@@ -32,7 +33,7 @@ model = dict(
     type="DefaultCaptioner",
     backbone=dict(
         type="eda_dc_cross",
-        butd=False
+        butd=True
     ),
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
@@ -45,7 +46,7 @@ param_dicts = [dict(keyword="captioner", lr=2e-4, weight_decay=0.0005)]
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
 
 # dataset settings
-dataset_type = "Joint3DDataset_JointDC_v2c"
+dataset_type = "Joint3DDataset_JointDC_v2c_butd"
 data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
 
 data = dict(
@@ -118,11 +119,11 @@ data = dict(
         test_mode=False
     ),
     val=dict(
-        type="Joint3DDataset_v2c",
-        # type=dataset_type,
+        # type="Joint3DDataset_v2c",
+        type=dataset_type,
         split="val",
-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
-        # data_root=data_root,
+        # data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
+        data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="GridSample", grid_size=0.05, hash_type="fnv", mode="train",
@@ -135,9 +136,11 @@ data = dict(
         ],
         test_mode=False),
     test=dict(
-        type=dataset_type,
+        # type=dataset_type,
+        type="Joint3DDataset_v2c",
         split="val",
-        data_root=data_root,
+        # data_root=data_root,
+        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="NormalizeColor")
@@ -183,7 +186,7 @@ data = dict(
 
 # tester
 test = dict(
-    type="CaptionTester",
+    # type="CaptionTester",
+    type="GroundingTester",
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
-

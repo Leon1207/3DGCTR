@@ -515,7 +515,7 @@ class CaptionTester(object):
             # ---- Checkout bounding box ious and semantic logits
             good_bbox_masks = match_box_ious > self.test_min_iou     # batch, nqueries
             good_bbox_masks &= end_points["last_sem_cls_scores"].argmax(-1) != (
-                end_points["last_sem_cls_scores"].shape[-1] - 1
+                 end_points["last_sem_cls_scores"].shape[-1] - 1
             )
 
             # ---- add nms to get accurate predictions, EDA

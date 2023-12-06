@@ -4,10 +4,10 @@ __pycache__
 **/*.egg-info/
 **/dist/
 *.so
-exp
 weights
 data
 log
+exp/
 outputs/
 .vscode
 .idea

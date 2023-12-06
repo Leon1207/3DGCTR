@@ -611,7 +611,6 @@ def get_positive_map(tokenized, tokens_positive):
     positive_map = positive_map / (positive_map.sum(-1)[:, None] + 1e-12)
     return positive_map.numpy()
 
-
 # if __name__ == '__main__':
 #     dataset = Joint3DDataset_JointDC_v2c()
 #     i = 0

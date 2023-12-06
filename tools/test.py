@@ -43,19 +43,18 @@ def main_worker(cfg):
     # load checkpoint
     if os.path.isfile(cfg.weight):
         checkpoint = torch.load(cfg.weight)
-        # state_dict = checkpoint['state_dict']
-        state_dict = checkpoint['model']
+        state_dict = checkpoint['state_dict']
+        # state_dict = checkpoint['model']
         new_state_dict = collections.OrderedDict()
         for name, value in state_dict.items():
             if name.startswith("module."):
                 if comm.get_world_size() == 1:
-                    # name = name[7:]  # module.xxx.xxx -> xxx.xxx
-                    name = "backbone." + name[7:]
+                    name = name[7:]  # module.xxx.xxx -> xxx.xxx
             else:
                 if comm.get_world_size() > 1:
                     name = "module." + name  # xxx.xxx -> module.xxx.xxx
             new_state_dict[name] = value
-        model.load_state_dict(new_state_dict, strict=False)
+        model.load_state_dict(new_state_dict, strict=True)
         logger.info("=> Loaded weight '{}' (epoch {})".format(cfg.weight, checkpoint['epoch']))
         cfg.test_epoch = checkpoint['epoch']
     else:

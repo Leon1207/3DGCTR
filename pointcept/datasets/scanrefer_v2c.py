@@ -56,12 +56,12 @@ class Joint3DDataset_v2c(Dataset):
                  transform=None,
                  dataset_dict={'scanrefer': 1, 'scannet': 10},
                  test_dataset='scanrefer',  # det or rec
-                #  dataset_dict={'nr3d': 1, 'scannet': 10},
-                #  test_dataset='nr3d',
+                 # dataset_dict={'nr3d': 1, 'scannet': 10},
+                 # test_dataset='nr3d',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
-                 butd=False, butd_gt=False, butd_cls=False, augment_det=True,  # butd
+                 butd=True, butd_gt=False, butd_cls=False, augment_det=True,  # butd
                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict

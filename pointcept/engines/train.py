@@ -208,17 +208,11 @@ class Trainer(TrainerBase):
                             
                 self.data_iterator = enumerate(self.train_loader)
                 self.before_epoch()
-                # => run_epoch
                 for self.comm_info["iter"], self.comm_info["input_dict"] in self.data_iterator:
-                    # => before_step
                     self.before_step()
-                    # => run_step
                     self.run_step()
-                    # => after_step
-                    self.after_step()  # debug
-                # => after epoch
+                    self.after_step()
                 self.after_epoch()
-            # => after train
             self.after_train()
 
     def run_step(self):
@@ -358,3 +352,4 @@ class Trainer(TrainerBase):
     def build_scaler(self):
         scaler = torch.cuda.amp.GradScaler() if self.cfg.enable_amp else None
         return scaler
+

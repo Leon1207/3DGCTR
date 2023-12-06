@@ -262,8 +262,8 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
             # self.scan_names = self.scan_names[:10]  # debug
 
             # for joint training
-            if split == "train":
-                self.scan_names = SCANREFER['scene_list'][split] * 10
+            # if split == "train":
+            #     self.scan_names = SCANREFER['scene_list'][split] * 10
 
             self.split = split
             print(f"kept {len(self.scan_names)} scans out of {len(all_scan_names)}")

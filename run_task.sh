@@ -18,4 +18,6 @@ cd /userhome/lyd/Pointcept/
 # eda-rec-res
 # sh scripts/train.sh -p python -g 4 -d scanrefer -c semseg-3dreftr-ptv2maxpool-v2c-eda -n 3dreftr-sp-v2c-nobutd
 # eda-mle
-sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-dc-v2c-joint-cross-smalllr-eda -n eda-dc-v2ctraining-joint10-cross-smalllr2-eda2
+# sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-dc-v2c-joint-cross-smalllr-eda -n eda-dc-v2ctraining-joint10-cross-smalllr2-eda2
+# eda-mle-butd
+sh scripts/train.sh -p python -g 4 -d scanrefer -c eda-s3d-dc-v2c-joint-cross-smalllr-eda-butd -n eda-dc-v2ctraining-joint10-cross-smalllr2-eda-butd
