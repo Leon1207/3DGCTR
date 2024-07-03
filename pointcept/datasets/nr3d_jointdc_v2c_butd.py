@@ -22,6 +22,7 @@ from typing import List, Dict
 from collections import defaultdict
 from .preprocessing.scanrefer.model_util_scannet_v2c import ScannetDatasetConfig_V2C
 from .preprocessing.scanrefer.scannet_utils import read_label_mapping
+from six.moves import cPickle
 
 IGNORE_LABEL = -100
 MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
@@ -33,22 +34,22 @@ DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data/'  # modify
 SCANREFER = {
     'language': {
         'train': json.load(
-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_train.json"), "r")
+            open(os.path.join(DATA_ROOT, "nr3d_train.json"), "r")
         ),
         'val': json.load(
-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_val.json"), "r")
+            open(os.path.join(DATA_ROOT, "nr3d_val.json"), "r")
         )
     },
     'scene_list': {
         'train': open(os.path.join(
-            DATA_ROOT, 'ScanRefer_filtered_train.txt'
+            DATA_ROOT, 'nr3d_train.txt'
         ), 'r').read().split(),
         'val': open(os.path.join(
-            DATA_ROOT, 'ScanRefer_filtered_val.txt'
+            DATA_ROOT, 'nr3d_val.txt'
         ), 'r').read().split()
     },
     'vocabulary': json.load(
-        open(os.path.join(DATA_ROOT, "ScanRefer_vocabulary.json"), "r")
+        open(os.path.join(DATA_ROOT, "nr3d_vocabulary.json"), "r")
     )
 }
 vocabulary = SCANREFER['vocabulary']
@@ -220,7 +221,7 @@ class DatasetConfig(object):
 
 
 @DATASETS.register_module()
-class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
+class Joint3DDataset_JointDC_v2c_nr3d_butd(torch.utils.data.Dataset):
 
     def __init__(self,
                 split="train",
@@ -280,7 +281,7 @@ class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
         self.use_multiview = use_multiview
         self.use_height = use_height
         self.augment = augment
-        self.augment_det = True
+        self.augment_det = False
         self.center_normalizing_range = [
             np.zeros((1, 3), dtype=np.float32),
             np.ones((1, 3), dtype=np.float32),
@@ -293,6 +294,13 @@ class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
             label_from='raw_category',
             label_to='id'
         )
+
+        self.scans = unpickle_data(f'/data/pointcloud/data_for_eda/scannet_others_processed/{split}_v3scans.pkl')
+        self.scans = list(self.scans)[0]
+
+        if os.path.exists('/home/lhj/lyd/3DRefTR/data/cls_results.json'):
+            with open('/home/lhj/lyd/3DRefTR/data/cls_results.json') as fid:
+                self.cls_results = json.load(fid)
 
     def default_dict_factory(self):
         return defaultdict(list)
@@ -373,6 +381,45 @@ class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
     
     def __len__(self):
         return len(self.scan_names)
+    
+
+    def _get_scene_objects(self, scan):
+        # Objects to keep
+        keep_ = np.array([
+            self.label_map[
+                scan.get_object_instance_label(ind)
+            ] in DC.nyu40id2class
+            for ind in range(len(scan.three_d_objects))
+        ])[:MAX_NUM_OBJ]    # keep_ (object_num)
+        keep = np.array([False] * MAX_NUM_OBJ)
+        keep[:len(keep_)] = keep_
+
+        # Class ids 
+        cid = np.array([
+            DC.nyu40id2class[self.label_map[scan.get_object_instance_label(k)]]
+            for k, kept in enumerate(keep) if kept
+        ])
+        class_ids = np.zeros((MAX_NUM_OBJ,))
+        class_ids[keep] = cid
+
+        # constract object boxes
+        all_bboxes = np.zeros((MAX_NUM_OBJ, 6))
+        all_bboxes_ = np.stack([
+            scan.get_object_bbox(k).reshape(-1)
+            for k, kept in enumerate(keep) if kept
+        ])
+        # cx, cy, cz, w, h, d
+        all_bboxes_ = np.concatenate((
+            (all_bboxes_[:, :3] + all_bboxes_[:, 3:]) * 0.5,
+            all_bboxes_[:, 3:] - all_bboxes_[:, :3]
+        ), 1)
+        all_bboxes[keep] = all_bboxes_
+        if self.split == 'train' and self.augment:
+            all_bboxes *= (0.95 + 0.1*np.random.random((len(all_bboxes), 6)))
+
+        # Which boxes we're interested for
+        all_bbox_label_mask = keep
+        return class_ids, all_bboxes, all_bbox_label_mask
 
     # BRIEF GroupFree detection boxes
     def _get_detected_objects(self, split, scan_id, augmentations):
@@ -600,6 +647,15 @@ class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
             detected_class_ids, detected_logits
         ) = self._get_detected_objects(self.split, scan_name, augmentations)
 
+        scan = self.scans[scan_name]
+        (class_ids, all_bboxes, all_bbox_label_mask) = self._get_scene_objects(scan)
+
+        all_detected_bboxes = all_bboxes
+        all_detected_bbox_label_mask = all_bbox_label_mask
+        detected_class_ids = np.zeros((len(all_bboxes,)))
+        classes = np.array(self.cls_results[scan_name])
+        detected_class_ids[all_bbox_label_mask] = classes[classes > -1]
+
         ret_dict["all_detected_boxes"] = all_detected_bboxes.astype(np.float32)
         ret_dict["all_detected_bbox_label_mask"] = all_detected_bbox_label_mask.astype(np.bool8)
         ret_dict["all_detected_class_ids"] = detected_class_ids.astype(np.int64)
@@ -687,6 +743,45 @@ def get_positive_map(tokenized, tokens_positive):
 
     positive_map = positive_map / (positive_map.sum(-1)[:, None] + 1e-12)
     return positive_map.numpy()
+
+
+def box2points(box):
+    """Convert box center/hwd coordinates to vertices (8x3)."""
+    x_min, y_min, z_min = (box[:, :3] - (box[:, 3:] / 2)).transpose(1, 0)
+    x_max, y_max, z_max = (box[:, :3] + (box[:, 3:] / 2)).transpose(1, 0)
+    return np.stack((
+        np.concatenate((x_min[:, None], y_min[:, None], z_min[:, None]), 1),
+        np.concatenate((x_min[:, None], y_max[:, None], z_min[:, None]), 1),
+        np.concatenate((x_max[:, None], y_min[:, None], z_min[:, None]), 1),
+        np.concatenate((x_max[:, None], y_max[:, None], z_min[:, None]), 1),
+        np.concatenate((x_min[:, None], y_min[:, None], z_max[:, None]), 1),
+        np.concatenate((x_min[:, None], y_max[:, None], z_max[:, None]), 1),
+        np.concatenate((x_max[:, None], y_min[:, None], z_max[:, None]), 1),
+        np.concatenate((x_max[:, None], y_max[:, None], z_max[:, None]), 1)
+    ), axis=1)
+
+
+def points2box(box):
+    """Convert vertices (Nx8x3) to box center/hwd coordinates (Nx6)."""
+    return np.concatenate((
+        (box.min(1) + box.max(1)) / 2,
+        box.max(1) - box.min(1)
+    ), axis=1)
+
+def unpickle_data(file_name, python2_to_3=False):
+    """Restore data previously saved with pickle_data()."""
+    in_file = open(file_name, 'rb')
+    if python2_to_3:
+        size = cPickle.load(in_file, encoding='latin1')
+    else:
+        size = cPickle.load(in_file)
+
+    for _ in range(size):
+        if python2_to_3:
+            yield cPickle.load(in_file, encoding='latin1')
+        else:
+            yield cPickle.load(in_file)
+    in_file.close()
 
 # if __name__ == '__main__':
 #     dataset = Joint3DDataset_JointDC_v2c()

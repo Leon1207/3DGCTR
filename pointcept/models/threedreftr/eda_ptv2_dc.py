@@ -53,7 +53,7 @@ class EDA_dc(nn.Module):
                  num_decoder_layers=6, self_position_embedding='loc_learned',
                  contrastive_align_loss=True,
                  d_model=288, butd=False, pointnet_ckpt=None, scst=False,
-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
+                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
                  self_attend=True):
         """Initialize layers."""
         super().__init__()

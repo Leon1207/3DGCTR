@@ -11,7 +11,8 @@ enable_amp = True
 num_worker = 4
 eval_freq = 10
 find_unused_parameters = True
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-nr3d/model/model_best.pth"
+# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d/model/model_best.pth"
+weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d-diff-keep2/model/model_best.pth"
 frozen = True
 frozenbn = True
 
@@ -34,7 +35,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.25, 0.5])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 hooks = [
     dict(type="CheckpointLoader", keywords='module.', replacement=''),

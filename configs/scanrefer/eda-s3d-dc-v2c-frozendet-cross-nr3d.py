@@ -11,7 +11,7 @@ enable_amp = True
 num_worker = 4
 eval_freq = 10
 find_unused_parameters = True
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
+# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
 frozen = True
 frozenbn = True
 
@@ -19,8 +19,8 @@ frozenbn = True
 model = dict(
     type="DefaultOnlyCaptioner",
     backbone=dict(
-        type="eda_ptv2_dc_cross",
-        butd=False  # not used butd
+        type="eda_dc_cross",
+        butd=True  # not used butd
     ),
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
@@ -33,8 +33,8 @@ param_dicts = "frozen"
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
 
 # dataset settings
-dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+dataset_type = "Joint3DDataset_JointDC_v2c_nr3d_butd"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 hooks = [
     dict(type="CheckpointLoader", keywords='module.', replacement=''),

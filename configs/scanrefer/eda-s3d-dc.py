@@ -9,7 +9,7 @@ batch_size_val = 6
 batch_size_test = 6
 eval_freq = 1
 # weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-alignEDA/model/model_best.pth"
+weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-alignEDA/model/model_best.pth"
 
 # model settings
 model = dict(
@@ -29,7 +29,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC"
-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
+data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
     num_classes=13,

@@ -427,7 +427,7 @@ class CaptionTester(object):
                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
         self.test_min_iou = 0.50
-        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
+        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_result"
         dataset_config = ScannetDatasetConfig_V2C(18)
         # Used for AP calculation
         self.config_dict = {
@@ -884,7 +884,7 @@ class ScannetDatasetConfig_V2C:
         self.num_class = num_class if not agnostic else 1  # 18
         self.num_heading_bin = 1
         self.num_size_cluster = num_class
-        self.meta_data_dir = os.path.join("/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/", "scannet", "meta_data")
+        self.meta_data_dir = os.path.join("/data/pointcloud/data_for_vote2cap/data/", "scannet", "meta_data")
         if num_class == 18:
             self.type2class = {
                 'cabinet':0, 'bed':1, 'chair':2, 'sofa':3, 'table':4, 'door':5,

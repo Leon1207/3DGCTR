@@ -48,7 +48,7 @@ DC = ScannetDatasetConfig_V2C(NUM_CLASSES)
 DC18 = ScannetDatasetConfig_V2C(18)
 MAX_NUM_OBJ = 132
 
-DATA_ROOT = '/userhome/lyd/Pointcept/pointcept/datasets/preprocessing/scanrefer/meta_data'  # modify
+DATA_ROOT = '/home/lhj/lyd/VL-Pointcept/pointcept/datasets/preprocessing/scanrefer/meta_data'  # modify
 SCANREFER = {
     'language': {
         'train': json.load(
@@ -134,14 +134,14 @@ class Joint3DDataset_JointDC(Dataset):
 
     def __init__(self, 
                  split='train',
-                 data_root='/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed',
+                 data_root='/data/pointcloud/data_for_eda/scannet_others_processed',
                  transform=None,
                  dataset_dict={'scanrefer': 1, 'scannet': 10, 'scannetdc': 1},  # training on rec
                  test_dataset='scannet',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
-                 butd=False, butd_gt=False, butd_cls=False, augment_det=True,
+                 butd=False, butd_gt=False, butd_cls=False, augment_det=False,
                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
@@ -159,7 +159,7 @@ class Joint3DDataset_JointDC(Dataset):
         self.data_path = data_root
         self.butd = False
         self.butd_gt = False
-        self.butd_cls = False
+        self.butd_cls = True  # align
         self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
             'scannet' in dataset_dict

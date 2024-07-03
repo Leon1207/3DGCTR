@@ -7,6 +7,7 @@ from .scanrefer_v2c import Joint3DDataset_v2c
 from .scanrefer_jointdc_v2c import Joint3DDataset_JointDC_v2c
 from .scanrefer_jointdc_v2c_butd import Joint3DDataset_JointDC_v2c_butd
 from .nr3d_jointdc_v2c import Joint3DDataset_JointDC_v2c_nr3d 
+from .nr3d_jointdc_v2c_butd import Joint3DDataset_JointDC_v2c_nr3d_butd
 from .scanrefer_pretrain import Joint3DDataset_Pretrain
 from .scanrefer_jointdc import Joint3DDataset_JointDC
 from .scanrefer_debug import Joint3DDataset_debug

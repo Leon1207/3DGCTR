@@ -11,7 +11,7 @@
 
 import numpy as np
 import os
-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'
+DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data'
 
 
 class ScannetDatasetConfig_V2C:

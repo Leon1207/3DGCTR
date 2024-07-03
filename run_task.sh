@@ -1,7 +1,7 @@
 # conda init bash
 source /opt/conda/etc/profile.d/conda.sh
 conda activate pointcept102 
-cd /userhome/lyd/Pointcept/
+cd /home/lhj/lyd/VL-Pointcept/
 
 # scst
 # sh scripts/train.sh -p python -g 1 -d scanrefer -c eda-s3d-dc-v2c-scst-cross -n eda-dc-v2ctraining-joint10-cross-smalllr2-scst5

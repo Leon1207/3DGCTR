@@ -9,7 +9,7 @@ batch_size_val = 8
 batch_size_test = 8
 find_unused_parameters = True
 eval_freq = 3
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-s3d-pretrain/model/model_best.pth"
+weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-s3d-pretrain/model/model_best.pth"
 
 # model settings
 model = dict(
@@ -28,7 +28,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset_Pretrain"
-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
+data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
     num_classes=13,

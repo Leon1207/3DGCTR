@@ -450,7 +450,7 @@ class S3D:
         return b
 
 
-# s3d_debug = S3D("00000_485142", "/userhome/lyd/Pointcept/data/structured3d/Only_panorama/train")
+# s3d_debug = S3D("00000_485142", "/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/train")
 # s3d_debug.load_point_clouds_of_all_objects()
 # s3d_debug.load_point_cloud()
 # s3d_debug.get_object_bbox(6)
@@ -628,7 +628,7 @@ class S3DView:
         ]
         return b
 
-# s3d_debug = S3DView("00000_485142_1", "/userhome/lyd/Pointcept/data/structured3d/Only_view/train")
+# s3d_debug = S3DView("00000_485142_1", "/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/train")
 # s3d_debug.load_point_clouds_of_all_objects()
 # s3d_debug.load_point_cloud()
 # s3d_debug.get_object_bbox(6)

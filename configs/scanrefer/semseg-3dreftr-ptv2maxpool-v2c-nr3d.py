@@ -8,8 +8,8 @@ num_worker = 8
 batch_size_val = 8  # 8
 batch_size_test = 8  # 8
 find_unused_parameters = True
-eval_freq = 3
-weight = "/userhome/lyd/3dvlm/log/NR3D_52_1.pth"
+eval_freq = 1
+weight = "/home/lhj/lyd/VL-Pointcept/exp/keep_2e-4_516.pth"
 
 # model settings
 model = dict(
@@ -21,14 +21,14 @@ model = dict(
 )
 
 # scheduler settings
-epoch = 240
-eval_epoch = 240
-optimizer = dict(type="AdamW", lr=1e-4, weight_decay=0.0005)
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.625])
+epoch = 50
+eval_epoch = 50
+optimizer = dict(type="AdamW", lr=1e-5, weight_decay=0.0005)
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.8])
 
 # dataset settings
 dataset_type = "Joint3DDataset_v2c"
-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
+data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
     num_classes=13,

@@ -8,8 +8,8 @@ num_worker = 8
 batch_size_val = 8  # 8
 batch_size_test = 8  # 8
 find_unused_parameters = True
-eval_freq = 3 
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_last.pth"
+eval_freq = 1
+weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d/model/model_best.pth"
 
 # model settings
 model = dict(
@@ -23,12 +23,12 @@ model = dict(
 # scheduler settings
 epoch = 100
 eval_epoch = 100
-optimizer = dict(type="AdamW", lr=1e-5, weight_decay=0.0005)
+optimizer = dict(type="AdamW", lr=5e-6, weight_decay=0.0005)
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset_v2c"
-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
+data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
     num_classes=13,

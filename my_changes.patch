@@ -1,0 +1,1506 @@
+diff --git a/compare_ckp.py b/compare_ckp.py
+index 6eadcbe..1735d9a 100644
+--- a/compare_ckp.py
++++ b/compare_ckp.py
+@@ -1,8 +1,8 @@
+ import torch
+ 
+ # 加载两个检查点
+-checkpoint1 = torch.load('/userhome/lyd/Pointcept/exp/model_best_frozen_dcmodel_66_38.pth')
+-checkpoint2 = torch.load('/userhome/lyd/Pointcept/exp/scanrefer/debug/model/model_last_6553.pth')
++checkpoint1 = torch.load('/home/lhj/lyd/VL-Pointcept/exp/model_best_frozen_dcmodel_66_38.pth')
++checkpoint2 = torch.load('/home/lhj/lyd/VL-Pointcept/exp/scanrefer/debug/model/model_last_6553.pth')
+ 
+ # 获取参数字典
+ state_dict1 = checkpoint1['state_dict']
+diff --git a/configs/scanrefer/det-eda.py b/configs/scanrefer/det-eda.py
+index b85f538..7949943 100644
+--- a/configs/scanrefer/det-eda.py
++++ b/configs/scanrefer/det-eda.py
+@@ -26,7 +26,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/eda-ptv2.py b/configs/scanrefer/eda-ptv2.py
+index 03c1daa..9f1f3f1 100644
+--- a/configs/scanrefer/eda-ptv2.py
++++ b/configs/scanrefer/eda-ptv2.py
+@@ -27,7 +27,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-cross.py b/configs/scanrefer/eda-s3d-dc-v2c-cross.py
+index a6d71d4..0867eeb 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-cross.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-cross.py
+@@ -11,7 +11,7 @@ enable_amp = True
+ num_worker = 4
+ eval_freq = 10
+ find_unused_parameters = True
+-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
+ 
+ # model settings
+ model = dict(
+@@ -31,7 +31,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ hooks = [
+     # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross-nr3d.py b/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross-nr3d.py
+index 92a6f20..39b41f1 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross-nr3d.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross-nr3d.py
+@@ -11,7 +11,7 @@ enable_amp = True
+ num_worker = 4
+ eval_freq = 10
+ find_unused_parameters = True
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
+ frozen = True
+ frozenbn = True
+ 
+@@ -19,8 +19,8 @@ frozenbn = True
+ model = dict(
+     type="DefaultOnlyCaptioner",
+     backbone=dict(
+-        type="eda_ptv2_dc_cross",
+-        butd=False  # not used butd
++        type="eda_dc_cross",
++        butd=True  # not used butd
+     ),
+     losses=['boxes', 'labels', 'contrastive_align', 'captions']
+ )
+@@ -33,8 +33,8 @@ param_dicts = "frozen"
+ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+ 
+ # dataset settings
+-dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++dataset_type = "Joint3DDataset_JointDC_v2c_nr3d_butd"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ hooks = [
+     dict(type="CheckpointLoader", keywords='module.', replacement=''),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross.py b/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross.py
+index fd769ee..a15e83d 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-frozendet-cross.py
+@@ -11,7 +11,7 @@ enable_amp = True
+ num_worker = 4
+ eval_freq = 10
+ find_unused_parameters = True
+-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
+ frozen = True
+ frozenbn = True
+ 
+@@ -34,7 +34,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ hooks = [
+     dict(type="CheckpointLoader", keywords='module.', replacement=''),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda-butd.py b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda-butd.py
+index 6baf3d6..0516060 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda-butd.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda-butd.py
+@@ -9,13 +9,13 @@ batch_size_test = 12
+ eval_freq = 1
+ find_unused_parameters = True
+ # weight = "/userhome/lyd/3dvlm/log/ScanRefer_single_53_83.pth"  # 53.83
+-# weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_single_40_23.pth"  # 54.43
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd/model/model_best.pth"
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda2/model/model_best.pth"
+-weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_40_76.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/ckpt_3dreftr_sp_single_40_23.pth"  # 54.43
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda2/model/model_best.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/ckpt_3dreftr_sp_40_76.pth"
+ 
+ # testing grounding
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"
+ 
+ hooks = [
+     # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+@@ -47,7 +47,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c_butd"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ data = dict(
+     num_classes=13,
+@@ -89,7 +89,7 @@ data = dict(
+     train_joint=dict(
+         type="Joint3DDataset_v2c",
+         split="train",
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
+@@ -122,7 +122,7 @@ data = dict(
+         # type="Joint3DDataset_v2c",
+         type=dataset_type,
+         split="val",
+-        # data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        # data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         data_root=data_root,
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+@@ -140,7 +140,7 @@ data = dict(
+         type="Joint3DDataset_v2c",
+         split="val",
+         # data_root=data_root,
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+             dict(type="NormalizeColor")
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda.py b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda.py
+index 1d82c6d..48b5afd 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-eda.py
+@@ -9,12 +9,11 @@ batch_size_test = 12
+ eval_freq = 1
+ find_unused_parameters = True
+ # weight = "/userhome/lyd/3dvlm/log/ScanRefer_single_53_83.pth"  # 53.83
+-weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_single_40_23.pth"  # 54.43
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd/model/model_best.pth"
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda2/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda2/model/model_best.pth"
+ 
+ # testing grounding
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"
+ 
+ hooks = [
+     # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+@@ -46,7 +45,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ data = dict(
+     num_classes=13,
+@@ -88,7 +87,7 @@ data = dict(
+     train_joint=dict(
+         type="Joint3DDataset_v2c",
+         split="train",
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
+@@ -121,7 +120,7 @@ data = dict(
+         type="Joint3DDataset_v2c",
+         # type=dataset_type,
+         split="val",
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         # data_root=data_root,
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-frozenbn.py b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-frozenbn.py
+index 2427f25..213c558 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-frozenbn.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-frozenbn.py
+@@ -9,7 +9,7 @@ batch_size_test = 8
+ eval_freq = 3
+ find_unused_parameters = True
+ frozenbn = True
+-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
+ 
+ 
+ hooks = [
+@@ -40,7 +40,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ data = dict(
+     num_classes=13,
+@@ -82,7 +82,7 @@ data = dict(
+     train_joint=dict(
+         type="Joint3DDataset_v2c",
+         split="train",
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d.py b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d.py
+index ab4a4ba..9237426 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d.py
+@@ -8,7 +8,8 @@ batch_size_val = 8
+ batch_size_test = 8
+ eval_freq = 1
+ find_unused_parameters = True
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d/model/model_best.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d-diff-keep2/model/model_best.pth"
+ 
+ hooks = [
+     dict(type="CheckpointLoader"), 
+@@ -24,7 +25,7 @@ model = dict(
+     type="DefaultCaptioner",
+     backbone=dict(
+         type="eda_ptv2_dc_cross",
+-        butd=False  # not used butd
++        butd=False
+     ),
+     losses=['boxes', 'labels', 'contrastive_align', 'captions']
+ )
+@@ -38,7 +39,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ data = dict(
+     num_classes=13,
+@@ -80,7 +81,7 @@ data = dict(
+     train_joint=dict(
+         type="Joint3DDataset_v2c",
+         split="train",
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr.py b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr.py
+index be2b140..35325f2 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr.py
+@@ -8,8 +8,7 @@ batch_size_val = 8
+ batch_size_test = 8
+ eval_freq = 3
+ find_unused_parameters = True
+-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+-
++weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
+ 
+ hooks = [
+     dict(type="CheckpointLoader"), 
+@@ -39,7 +38,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ data = dict(
+     num_classes=13,
+@@ -81,7 +80,7 @@ data = dict(
+     train_joint=dict(
+         type="Joint3DDataset_v2c",
+         split="train",
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross.py b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross.py
+index 3f48e08..158e92e 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-joint-cross.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-joint-cross.py
+@@ -8,7 +8,7 @@ batch_size_val = 8
+ batch_size_test = 8
+ eval_freq = 3
+ find_unused_parameters = True
+-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
+ 
+ 
+ hooks = [
+@@ -38,7 +38,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ data = dict(
+     num_classes=13,
+@@ -80,7 +80,7 @@ data = dict(
+     train_joint=dict(
+         type="Joint3DDataset_v2c",
+         split="train",
+-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
++        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
+         transform=[
+             dict(type="CenterShift", apply_z=True),
+             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-scst-cross-nr3d.py b/configs/scanrefer/eda-s3d-dc-v2c-scst-cross-nr3d.py
+index 33cb61b..ee274b3 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-scst-cross-nr3d.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-scst-cross-nr3d.py
+@@ -11,7 +11,8 @@ enable_amp = True
+ num_worker = 4
+ eval_freq = 10
+ find_unused_parameters = True
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-nr3d/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d/model/model_best.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d-diff-keep2/model/model_best.pth"
+ frozen = True
+ frozenbn = True
+ 
+@@ -34,7 +35,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.25, 0.5])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ hooks = [
+     dict(type="CheckpointLoader", keywords='module.', replacement=''),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-scst-cross.py b/configs/scanrefer/eda-s3d-dc-v2c-scst-cross.py
+index ab5f68a..b7476cb 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-scst-cross.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-scst-cross.py
+@@ -11,12 +11,12 @@ enable_amp = True
+ num_worker = 4
+ eval_freq = 10
+ find_unused_parameters = True
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-frozendet-cross/model/model_best.pth"  # frozen:
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-cross/model/model_best.pth"  # source:
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"  # smalllr: 
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr/model/model_best.pth"
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2/model/model_best.pth"
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr-frozenbn/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-frozendet-cross/model/model_best.pth"  # frozen:
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-cross/model/model_best.pth"  # source:
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"  # smalllr: 
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr/model/model_best.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr-frozenbn/model/model_best.pth"
+ frozen = True
+ frozenbn = True
+ 
+@@ -39,7 +39,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.25, 0.5])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ hooks = [
+     dict(type="CheckpointLoader", keywords='module.', replacement=''),
+diff --git a/configs/scanrefer/eda-s3d-dc-v2c-smalllr-cross.py b/configs/scanrefer/eda-s3d-dc-v2c-smalllr-cross.py
+index 10dbd2a..15c214e 100644
+--- a/configs/scanrefer/eda-s3d-dc-v2c-smalllr-cross.py
++++ b/configs/scanrefer/eda-s3d-dc-v2c-smalllr-cross.py
+@@ -11,8 +11,8 @@ enable_amp = True
+ num_worker = 4
+ eval_freq = 10
+ find_unused_parameters = True
+-# weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"
+ 
+ # model settings
+ model = dict(
+@@ -33,7 +33,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC_v2c"
+-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
++data_root = "/data/pointcloud/data_for_vote2cap/"
+ 
+ hooks = [
+     # dict(type="CheckpointLoader", keywords='module.', replacement=''),
+diff --git a/configs/scanrefer/eda-s3d-dc.py b/configs/scanrefer/eda-s3d-dc.py
+index f4300ae..de92357 100644
+--- a/configs/scanrefer/eda-s3d-dc.py
++++ b/configs/scanrefer/eda-s3d-dc.py
+@@ -9,7 +9,7 @@ batch_size_val = 6
+ batch_size_test = 6
+ eval_freq = 1
+ # weight = "exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd/model/model_best.pth"
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-alignEDA/model/model_best.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-alignEDA/model/model_best.pth"
+ 
+ # model settings
+ model = dict(
+@@ -29,7 +29,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_JointDC"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/eda-s3d-pretrain.py b/configs/scanrefer/eda-s3d-pretrain.py
+index 904fb10..385931c 100644
+--- a/configs/scanrefer/eda-s3d-pretrain.py
++++ b/configs/scanrefer/eda-s3d-pretrain.py
+@@ -27,7 +27,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_Pretrain"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-debug.py b/configs/scanrefer/semseg-3dreftr-debug.py
+index e48edf5..49f783a 100644
+--- a/configs/scanrefer/semseg-3dreftr-debug.py
++++ b/configs/scanrefer/semseg-3dreftr-debug.py
+@@ -22,7 +22,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-fast.py b/configs/scanrefer/semseg-3dreftr-fast.py
+index aae80ba..3a3c581 100644
+--- a/configs/scanrefer/semseg-3dreftr-fast.py
++++ b/configs/scanrefer/semseg-3dreftr-fast.py
+@@ -25,7 +25,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-pretrain.py b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-pretrain.py
+index 86f8691..1c4f66b 100644
+--- a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-pretrain.py
++++ b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-pretrain.py
+@@ -9,7 +9,7 @@ batch_size_val = 8
+ batch_size_test = 8
+ find_unused_parameters = True
+ eval_freq = 3
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-s3d-pretrain/model/model_best.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-s3d-pretrain/model/model_best.pth"
+ 
+ # model settings
+ model = dict(
+@@ -28,7 +28,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_Pretrain"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-eda.py b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-eda.py
+index 4299c8c..80eba91 100644
+--- a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-eda.py
++++ b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-eda.py
+@@ -27,7 +27,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_v2c"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d-decay.py b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d-decay.py
+index 506765b..dd2811d 100644
+--- a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d-decay.py
++++ b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d-decay.py
+@@ -8,8 +8,8 @@ num_worker = 8
+ batch_size_val = 8  # 8
+ batch_size_test = 8  # 8
+ find_unused_parameters = True
+-eval_freq = 3 
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_last.pth"
++eval_freq = 1
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d/model/model_best.pth"
+ 
+ # model settings
+ model = dict(
+@@ -23,12 +23,12 @@ model = dict(
+ # scheduler settings
+ epoch = 100
+ eval_epoch = 100
+-optimizer = dict(type="AdamW", lr=1e-5, weight_decay=0.0005)
++optimizer = dict(type="AdamW", lr=5e-6, weight_decay=0.0005)
+ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_v2c"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d.py b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d.py
+index 7f50c4d..72dae54 100644
+--- a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d.py
++++ b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d.py
+@@ -8,8 +8,8 @@ num_worker = 8
+ batch_size_val = 8  # 8
+ batch_size_test = 8  # 8
+ find_unused_parameters = True
+-eval_freq = 3
+-weight = "/userhome/lyd/3dvlm/log/NR3D_52_1.pth"
++eval_freq = 1
++weight = "/home/lhj/lyd/VL-Pointcept/exp/keep_2e-4_516.pth"
+ 
+ # model settings
+ model = dict(
+@@ -21,14 +21,14 @@ model = dict(
+ )
+ 
+ # scheduler settings
+-epoch = 240
+-eval_epoch = 240
+-optimizer = dict(type="AdamW", lr=1e-4, weight_decay=0.0005)
+-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.625])
++epoch = 50
++eval_epoch = 50
++optimizer = dict(type="AdamW", lr=1e-5, weight_decay=0.0005)
++scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.8])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_v2c"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-selfattn.py b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-selfattn.py
+index 94174e1..394f52a 100644
+--- a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-selfattn.py
++++ b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-selfattn.py
+@@ -27,7 +27,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_v2c"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c.py b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c.py
+index 4b7550c..8dc2fe3 100644
+--- a/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c.py
++++ b/configs/scanrefer/semseg-3dreftr-ptv2maxpool-v2c.py
+@@ -9,9 +9,9 @@ batch_size_val = 8  # 8
+ batch_size_test = 48  # 8
+ find_unused_parameters = True
+ eval_freq = 3 
+-# weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr/model/model_best.pth"
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross/model/model_best.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
++# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr/model/model_best.pth"
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross/model/model_best.pth"
+ 
+ # model settings
+ model = dict(
+@@ -30,7 +30,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset_v2c"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-ptv2maxpool.py b/configs/scanrefer/semseg-3dreftr-ptv2maxpool.py
+index a84ecba..72bf2d6 100644
+--- a/configs/scanrefer/semseg-3dreftr-ptv2maxpool.py
++++ b/configs/scanrefer/semseg-3dreftr-ptv2maxpool.py
+@@ -9,7 +9,7 @@ batch_size_val = 1  # 8
+ batch_size_test = 1  # 8
+ find_unused_parameters = True
+ eval_freq = 3
+-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024/model/model_best.pth"  # testing 
++weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024/model/model_best.pth"  # testing 
+ 
+ # model settings
+ model = dict(
+@@ -27,7 +27,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-spunet.py b/configs/scanrefer/semseg-3dreftr-spunet.py
+index e201954..562c146 100644
+--- a/configs/scanrefer/semseg-3dreftr-spunet.py
++++ b/configs/scanrefer/semseg-3dreftr-spunet.py
+@@ -26,7 +26,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr-swin3d.py b/configs/scanrefer/semseg-3dreftr-swin3d.py
+index aeed631..e693e4e 100644
+--- a/configs/scanrefer/semseg-3dreftr-swin3d.py
++++ b/configs/scanrefer/semseg-3dreftr-swin3d.py
+@@ -26,7 +26,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/configs/scanrefer/semseg-3dreftr.py b/configs/scanrefer/semseg-3dreftr.py
+index dd8d4c5..e482651 100644
+--- a/configs/scanrefer/semseg-3dreftr.py
++++ b/configs/scanrefer/semseg-3dreftr.py
+@@ -24,7 +24,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
+ 
+ # dataset settings
+ dataset_type = "Joint3DDataset"
+-data_root = "/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed"
++data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+ 
+ data = dict(
+     num_classes=13,
+diff --git a/pointcept/datasets/__init__.py b/pointcept/datasets/__init__.py
+index aa17482..dc27b6c 100644
+--- a/pointcept/datasets/__init__.py
++++ b/pointcept/datasets/__init__.py
+@@ -7,6 +7,7 @@ from .scanrefer_v2c import Joint3DDataset_v2c
+ from .scanrefer_jointdc_v2c import Joint3DDataset_JointDC_v2c
+ from .scanrefer_jointdc_v2c_butd import Joint3DDataset_JointDC_v2c_butd
+ from .nr3d_jointdc_v2c import Joint3DDataset_JointDC_v2c_nr3d 
++from .nr3d_jointdc_v2c_butd import Joint3DDataset_JointDC_v2c_nr3d_butd
+ from .scanrefer_pretrain import Joint3DDataset_Pretrain
+ from .scanrefer_jointdc import Joint3DDataset_JointDC
+ from .scanrefer_debug import Joint3DDataset_debug
+diff --git a/pointcept/datasets/nr3d_jointdc_v2c.py b/pointcept/datasets/nr3d_jointdc_v2c.py
+index 61e1d66..626703c 100644
+--- a/pointcept/datasets/nr3d_jointdc_v2c.py
++++ b/pointcept/datasets/nr3d_jointdc_v2c.py
+@@ -26,7 +26,7 @@ MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
+ MAX_NUM_OBJ = 132
+ NUM_CLASSES = 485
+ 
+-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'  # modify
++DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data/'  # modify
+ SCANREFER = {
+     'language': {
+         'train': json.load(
+@@ -221,7 +221,7 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
+ 
+     def __init__(self,
+                 split="train",
+-                data_root='/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/',
++                data_root='/data/pointcloud/data_for_vote2cap/',
+                 transform=None,
+                 dataset_config=DatasetConfig(),
+                 num_points=50000,
+@@ -259,9 +259,8 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
+             
+             self.scanrefer = SCANREFER['language'][split]
+             self.scan_names = SCANREFER['scene_list'][split]
+-            # self.scan_names = self.scan_names[:10]  # debug
+ 
+-            # for joint training
++            # for joint training, no need for scst
+             # if split == "train":
+             #     self.scan_names = SCANREFER['scene_list'][split] * 10
+ 
+@@ -311,7 +310,7 @@ class Joint3DDataset_JointDC_v2c_nr3d(torch.utils.data.Dataset):
+         tokens_positive = np.zeros((MAX_NUM_OBJ, 2))
+         tokenizer_roberta = \
+             RobertaTokenizerFast.from_pretrained(
+-                '/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
++                '/data/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
+                 local_files_only=True)
+         
+         if isinstance(targets, list):
+diff --git a/pointcept/datasets/preprocessing/scanrefer/model_util_scannet_v2c.py b/pointcept/datasets/preprocessing/scanrefer/model_util_scannet_v2c.py
+index 5081edc..1ba4db0 100644
+--- a/pointcept/datasets/preprocessing/scanrefer/model_util_scannet_v2c.py
++++ b/pointcept/datasets/preprocessing/scanrefer/model_util_scannet_v2c.py
+@@ -11,7 +11,7 @@
+ 
+ import numpy as np
+ import os
+-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'
++DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data'
+ 
+ 
+ class ScannetDatasetConfig_V2C:
+diff --git a/pointcept/datasets/preprocessing/scanrefer/visual_data_handlers.py b/pointcept/datasets/preprocessing/scanrefer/visual_data_handlers.py
+index bc98d33..0177bda 100644
+--- a/pointcept/datasets/preprocessing/scanrefer/visual_data_handlers.py
++++ b/pointcept/datasets/preprocessing/scanrefer/visual_data_handlers.py
+@@ -450,7 +450,7 @@ class S3D:
+         return b
+ 
+ 
+-# s3d_debug = S3D("00000_485142", "/userhome/lyd/Pointcept/data/structured3d/Only_panorama/train")
++# s3d_debug = S3D("00000_485142", "/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/train")
+ # s3d_debug.load_point_clouds_of_all_objects()
+ # s3d_debug.load_point_cloud()
+ # s3d_debug.get_object_bbox(6)
+@@ -628,7 +628,7 @@ class S3DView:
+         ]
+         return b
+ 
+-# s3d_debug = S3DView("00000_485142_1", "/userhome/lyd/Pointcept/data/structured3d/Only_view/train")
++# s3d_debug = S3DView("00000_485142_1", "/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/train")
+ # s3d_debug.load_point_clouds_of_all_objects()
+ # s3d_debug.load_point_cloud()
+ # s3d_debug.get_object_bbox(6)
+diff --git a/pointcept/datasets/scanrefer.py b/pointcept/datasets/scanrefer.py
+index a37a93f..b82565e 100644
+--- a/pointcept/datasets/scanrefer.py
++++ b/pointcept/datasets/scanrefer.py
+@@ -137,7 +137,7 @@ class Joint3DDataset(Dataset):
+         # fetch superpoints
+         self.superpoints = {}
+         for scan in self.scans:
+-            superpoint = torch.load(os.path.join('/userhome/lyd/RES/superpoint', self.split, scan + "_superpoint.pth"))
++            superpoint = torch.load(os.path.join('/data/pointcloud/data_for_eda/scannet_others_processed/superpoint', self.split, scan + "_superpoint.pth"))
+             self.superpoints[scan] = superpoint
+         
+         # step 4. load text dataset
+diff --git a/pointcept/datasets/scanrefer_debug.py b/pointcept/datasets/scanrefer_debug.py
+index 8161a87..94c43a6 100644
+--- a/pointcept/datasets/scanrefer_debug.py
++++ b/pointcept/datasets/scanrefer_debug.py
+@@ -26,7 +26,7 @@ MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
+ MAX_NUM_OBJ = 132
+ NUM_CLASSES = 485
+ 
+-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'  # modify
++DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data/'  # modify
+ SCANREFER = {
+     'language': {
+         'train': json.load(
+@@ -221,7 +221,7 @@ class Joint3DDataset_debug(torch.utils.data.Dataset):
+ 
+     def __init__(self,
+                 split="train",
+-                data_root='/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/',
++                data_root='/data/pointcloud/data_for_vote2cap/',
+                 transform=None,
+                 dataset_config=DatasetConfig(),
+                 num_points=50000,
+@@ -310,7 +310,7 @@ class Joint3DDataset_debug(torch.utils.data.Dataset):
+         tokens_positive = np.zeros((MAX_NUM_OBJ, 2))
+         tokenizer_roberta = \
+             RobertaTokenizerFast.from_pretrained(
+-                '/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
++                '/data/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
+                 local_files_only=True)
+         
+         if isinstance(targets, list):
+diff --git a/pointcept/datasets/scanrefer_jointdc.py b/pointcept/datasets/scanrefer_jointdc.py
+index f49d2f8..7f9cd61 100644
+--- a/pointcept/datasets/scanrefer_jointdc.py
++++ b/pointcept/datasets/scanrefer_jointdc.py
+@@ -48,7 +48,7 @@ DC = ScannetDatasetConfig_V2C(NUM_CLASSES)
+ DC18 = ScannetDatasetConfig_V2C(18)
+ MAX_NUM_OBJ = 132
+ 
+-DATA_ROOT = '/userhome/lyd/Pointcept/pointcept/datasets/preprocessing/scanrefer/meta_data'  # modify
++DATA_ROOT = '/home/lhj/lyd/VL-Pointcept/pointcept/datasets/preprocessing/scanrefer/meta_data'  # modify
+ SCANREFER = {
+     'language': {
+         'train': json.load(
+@@ -134,14 +134,14 @@ class Joint3DDataset_JointDC(Dataset):
+ 
+     def __init__(self, 
+                  split='train',
+-                 data_root='/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed',
++                 data_root='/data/pointcloud/data_for_eda/scannet_others_processed',
+                  transform=None,
+                  dataset_dict={'scanrefer': 1, 'scannet': 10, 'scannetdc': 1},  # training on rec
+                  test_dataset='scannet',
+                  overfit=False,
+                  use_color=True, use_height=False, use_multiview=False,
+                  detect_intermediate=True,
+-                 butd=False, butd_gt=False, butd_cls=False, augment_det=True,
++                 butd=False, butd_gt=False, butd_cls=False, augment_det=False,
+                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
+         """Initialize dataset (here for ReferIt3D utterances)."""
+         self.dataset_dict = dataset_dict
+@@ -159,7 +159,7 @@ class Joint3DDataset_JointDC(Dataset):
+         self.data_path = data_root
+         self.butd = False
+         self.butd_gt = False
+-        self.butd_cls = False
++        self.butd_cls = True  # align
+         self.loop = loop if not test_mode else 1
+         self.joint_det = (  # joint usage of detection/grounding phrases
+             'scannet' in dataset_dict
+diff --git a/pointcept/datasets/scanrefer_jointdc_v2c.py b/pointcept/datasets/scanrefer_jointdc_v2c.py
+index 887b2af..f581dd6 100644
+--- a/pointcept/datasets/scanrefer_jointdc_v2c.py
++++ b/pointcept/datasets/scanrefer_jointdc_v2c.py
+@@ -26,7 +26,7 @@ MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
+ MAX_NUM_OBJ = 132
+ NUM_CLASSES = 485
+ 
+-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'  # modify
++DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data/'  # modify
+ SCANREFER = {
+     'language': {
+         'train': json.load(
+@@ -221,7 +221,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
+ 
+     def __init__(self,
+                 split="train",
+-                data_root='/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/',
++                data_root='/data/pointcloud/data_for_vote2cap/',
+                 transform=None,
+                 dataset_config=DatasetConfig(),
+                 num_points=50000,
+@@ -311,7 +311,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
+         tokens_positive = np.zeros((MAX_NUM_OBJ, 2))
+         tokenizer_roberta = \
+             RobertaTokenizerFast.from_pretrained(
+-                '/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
++                '/data/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
+                 local_files_only=True)
+         
+         if isinstance(targets, list):
+diff --git a/pointcept/datasets/scanrefer_jointdc_v2c_butd.py b/pointcept/datasets/scanrefer_jointdc_v2c_butd.py
+index 1faa8ea..d43f682 100644
+--- a/pointcept/datasets/scanrefer_jointdc_v2c_butd.py
++++ b/pointcept/datasets/scanrefer_jointdc_v2c_butd.py
+@@ -29,7 +29,7 @@ MAX_NUM_OBJ = 132
+ NUM_CLASSES = 485
+ DC = ScannetDatasetConfig_V2C(NUM_CLASSES)
+ 
+-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'  # modify
++DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data/'  # modify
+ SCANREFER = {
+     'language': {
+         'train': json.load(
+@@ -224,7 +224,7 @@ class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
+ 
+     def __init__(self,
+                 split="train",
+-                data_root='/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/',
++                data_root='/data/pointcloud/data_for_vote2cap/',
+                 transform=None,
+                 dataset_config=DatasetConfig(),
+                 num_points=50000,
+@@ -320,7 +320,7 @@ class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
+         tokens_positive = np.zeros((MAX_NUM_OBJ, 2))
+         tokenizer_roberta = \
+             RobertaTokenizerFast.from_pretrained(
+-                '/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
++                '/data/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
+                 local_files_only=True)
+         
+         if isinstance(targets, list):
+@@ -384,7 +384,7 @@ class Joint3DDataset_JointDC_v2c_butd(torch.utils.data.Dataset):
+ 
+         # Load: class, box, pc, logits
+         detected_dict = np.load(
+-            f'/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/group_free_pred_bboxes/group_free_pred_bboxes_{split}/{scan_id}.npy',
++            f'/data/pointcloud/data_for_eda/scannet_others_processed/group_free_pred_bboxes/group_free_pred_bboxes_{split}/{scan_id}.npy',
+             allow_pickle=True
+         ).item()
+ 
+diff --git a/pointcept/datasets/scanrefer_pretrain.py b/pointcept/datasets/scanrefer_pretrain.py
+index 8aaa619..d72415a 100644
+--- a/pointcept/datasets/scanrefer_pretrain.py
++++ b/pointcept/datasets/scanrefer_pretrain.py
+@@ -141,7 +141,7 @@ class Joint3DDataset_Pretrain(Dataset):
+         self.annos = []
+ 
+         # using for processing datasets and save pkl for each scene_room
+-        # s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}'
++        # s3d_data_path = f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/{split}'
+         # total = 3000 if split == 'train' else 250
+         # for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
+         #     print("Process: {}/{}".format(cnt, total))
+@@ -169,7 +169,7 @@ class Joint3DDataset_Pretrain(Dataset):
+         #             })
+         #             pkl_name = scene_id + ".pkl"
+         #             save_dict = {scene_id: scan}
+-        #             pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + pkl_name, save_dict)
++        #             pickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + pkl_name, save_dict)
+ 
+         #         else:
+         #             print("Fliter scene: ", scene_id.split(".")[0])
+@@ -177,7 +177,7 @@ class Joint3DDataset_Pretrain(Dataset):
+         # print("Finished.")
+         
+         # using for myself with 10 train set split scene lists
+-        # s3d_pkl_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/'
++        # s3d_pkl_path = f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/'
+         # for cnt in range(1, 11):
+         #     print("Processing... ", cnt)
+         #     pkl_name = s3d_pkl_path + "train_s3ds_" + str(cnt) + ".pkl"
+@@ -186,25 +186,25 @@ class Joint3DDataset_Pretrain(Dataset):
+         #     for key in scans.keys():
+         #         scan = scans[key]
+         #         save_dict = {key: scan}
+-        #         pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/train_scene_pkl/' + key + ".pkl", save_dict)
++        #         pickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/train_scene_pkl/' + key + ".pkl", save_dict)
+         
+         # using for myself with 1 val set split scene lists
+-        # s3d_pkl_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/'
++        # s3d_pkl_path = f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/'
+         # pkl_name = s3d_pkl_path + "val_s3ds.pkl"
+         # scans = unpickle_data(pkl_name)
+         # scans = list(scans)[0]
+         # for key in scans.keys():
+         #     scan = scans[key]
+         #     save_dict = {key: scan}
+-        #     pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_scene_pkl/' + key + ".pkl", save_dict)
++        #     pickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/val_scene_pkl/' + key + ".pkl", save_dict)
+ 
+         # using after processing, loading each annos and filter invalid scene
+         use_pano_psrp = "Only_view"
+-        lis_dir = os.listdir(f'/userhome/lyd/Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/')
++        lis_dir = os.listdir(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/')
+         for cnt, scene_id in enumerate(lis_dir):
+             if cnt % 1000 == 0:
+                 print("Filter process: {}/{}".format(cnt, len(lis_dir)))
+-            scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/' + scene_id)
++            scan = unpickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/' + scene_id)
+             scan = list(scan)[0][scene_id.split(".")[0]]
+ 
+             keep = np.where(np.array([
+@@ -760,7 +760,7 @@ class Joint3DDataset_Pretrain(Dataset):
+ 
+         # step Read annotation and point clouds
+         anno = self.annos[index]
+-        scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
++        scan = unpickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
+         scan = list(scan)[0][anno['scan_id']]
+         scan.pc = np.copy(scan.orig_pc)
+         superpoint = torch.zeros((1))  # avoid bugs
+diff --git a/pointcept/datasets/scanrefer_v2c.py b/pointcept/datasets/scanrefer_v2c.py
+index 22b8ab1..bdd8375 100644
+--- a/pointcept/datasets/scanrefer_v2c.py
++++ b/pointcept/datasets/scanrefer_v2c.py
+@@ -54,14 +54,14 @@ class Joint3DDataset_v2c(Dataset):
+                  split='train',
+                  data_root='./',
+                  transform=None,
+-                 dataset_dict={'scanrefer': 1, 'scannet': 10},
+-                 test_dataset='scanrefer',  # det or rec
+-                 # dataset_dict={'nr3d': 1, 'scannet': 10},
+-                 # test_dataset='nr3d',
++                #  dataset_dict={'scanrefer': 1, 'scannet': 10},
++                #  test_dataset='scanrefer',  # det or rec
++                 dataset_dict={'nr3d': 1, 'scannet': 10},
++                 test_dataset='nr3d',
+                  overfit=False,
+                  use_color=True, use_height=False, use_multiview=False,
+                  detect_intermediate=True,
+-                 butd=True, butd_gt=False, butd_cls=False, augment_det=True,  # butd
++                 butd=False, butd_gt=False, butd_cls=False, augment_det=False,  # butd
+                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
+         """Initialize dataset (here for ReferIt3D utterances)."""
+         self.dataset_dict = dataset_dict
+@@ -139,7 +139,7 @@ class Joint3DDataset_v2c(Dataset):
+         # fetch superpoints
+         self.superpoints = {}
+         for scan in self.scans:
+-            superpoint = torch.load(os.path.join('/userhome/lyd/RES/superpoint', self.split, scan + "_superpoint.pth"))
++            superpoint = torch.load(os.path.join('/data/pointcloud/data_for_eda/scannet_others_processed/superpoint', self.split, scan + "_superpoint.pth"))
+             self.superpoints[scan] = superpoint
+         
+         # step 4. load text dataset
+diff --git a/pointcept/engines/hooks/evaluator.py b/pointcept/engines/hooks/evaluator.py
+index c2ff4ab..3d2caca 100644
+--- a/pointcept/engines/hooks/evaluator.py
++++ b/pointcept/engines/hooks/evaluator.py
+@@ -16,7 +16,8 @@ from pointcept.utils.misc import intersection_and_union_gpu
+ from pointcept.utils.grounding_evaluator import GroundingEvaluator as Gdeval
+ from pointcept.models.losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
+ from collections import OrderedDict, defaultdict
+-from pointcept.datasets.scanrefer_jointdc import SCANREFER
++# from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER
++from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER
+ from pointcept.utils.grounding_evaluator import _iou3d_par, box_cxcyczwhd_to_xyzxyz, box2points
+ import pointcept.utils.capeval.bleu.bleu as capblue
+ import pointcept.utils.capeval.cider.cider as capcider
+@@ -675,7 +676,7 @@ class CaptionEvaluator(HookBase):
+                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
+         super().__init__()
+         self.test_min_iou = 0.50  # ability
+-        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
++        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_result"
+         self.criterion = f'CiDEr@{self.test_min_iou}'
+         dataset_config = ScannetDatasetConfig_V2C(18)
+         # Used for AP calculation
+diff --git a/pointcept/engines/hooks/misc.py b/pointcept/engines/hooks/misc.py
+index 0287324..38b8a43 100644
+--- a/pointcept/engines/hooks/misc.py
++++ b/pointcept/engines/hooks/misc.py
+@@ -183,10 +183,10 @@ class CheckpointLoader(HookBase):
+             checkpoint = torch.load(self.trainer.cfg.weight, map_location=lambda storage, loc: storage.cuda())
+             self.trainer.logger.info(f"Loading layer weights with keyword: {self.keywords}, "
+                                      f"replace keyword with: {self.replacement}")
+-            # weight = OrderedDict([(key.replace(self.keywords, self.replacement), value)
+-            #                       for key, value in checkpoint['state_dict'].items() if self.keywords in key])
+-            weight = OrderedDict([(key[:7] + "backbone." + key[7:], value)  # eda weight
+-                                  for key, value in checkpoint['model'].items() if self.keywords in key])
++            weight = OrderedDict([(key.replace(self.keywords, self.replacement), value)
++                                  for key, value in checkpoint['state_dict'].items() if self.keywords in key])
++            # weight = OrderedDict([(key[:7] + "backbone." + key[7:], value)  # eda weight
++            #                       for key, value in checkpoint['model'].items() if self.keywords in key])
+             # weight = OrderedDict([(key[7:], value)  # four gpu to one gpu
+             #                       for key, value in checkpoint['state_dict'].items() if self.keywords in key])
+             load_state_info = self.trainer.model.load_state_dict(weight, strict=self.strict)
+diff --git a/pointcept/engines/test.py b/pointcept/engines/test.py
+index f1935cc..7d2428b 100644
+--- a/pointcept/engines/test.py
++++ b/pointcept/engines/test.py
+@@ -427,7 +427,7 @@ class CaptionTester(object):
+                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
+         super().__init__()
+         self.test_min_iou = 0.50
+-        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
++        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_result"
+         dataset_config = ScannetDatasetConfig_V2C(18)
+         # Used for AP calculation
+         self.config_dict = {
+@@ -884,7 +884,7 @@ class ScannetDatasetConfig_V2C:
+         self.num_class = num_class if not agnostic else 1  # 18
+         self.num_heading_bin = 1
+         self.num_size_cluster = num_class
+-        self.meta_data_dir = os.path.join("/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/", "scannet", "meta_data")
++        self.meta_data_dir = os.path.join("/data/pointcloud/data_for_vote2cap/data/", "scannet", "meta_data")
+         if num_class == 18:
+             self.type2class = {
+                 'cabinet':0, 'bed':1, 'chair':2, 'sofa':3, 'table':4, 'door':5,
+diff --git a/pointcept/models/default.py b/pointcept/models/default.py
+index 2acac2c..f81f3fb 100644
+--- a/pointcept/models/default.py
++++ b/pointcept/models/default.py
+@@ -209,7 +209,7 @@ class DefaultOnlyCaptioner(nn.Module):
+                 return dict(loss=loss)
+             else:
+                 loss_config = {'reduction': 'none', 'ignore_index': 0}
+-                nvocabs = 3433  # lenght of tokneizer
++                nvocabs = 2937  # lenght of tokneizer, 3433 for scanrefer, 2937 for nr3d
+                 o = end_points["caption_logits"][0]
+                 t = end_points['caption_target']
+                 loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config).reshape(t.shape)  
+diff --git a/pointcept/models/losses/vqa_losses.py b/pointcept/models/losses/vqa_losses.py
+index 5c2bc88..31d01e0 100644
+--- a/pointcept/models/losses/vqa_losses.py
++++ b/pointcept/models/losses/vqa_losses.py
+@@ -539,7 +539,7 @@ class SetCriterion(nn.Module):
+     # Caption Loss
+     def loss_caption(self, outputs, targets, indices, num_boxes, auxi_indices):
+         loss_config = {'reduction': 'none', 'ignore_index': 0}
+-        nvocabs = 3433  # lenght of tokneizer
++        nvocabs = 2937  # lenght of tokneizer,
+         losses = {}
+         cap_loss = 0.0
+         
+diff --git a/pointcept/models/threedreftr/captioner_dcc/captioner.py b/pointcept/models/threedreftr/captioner_dcc/captioner.py
+index 47eccc1..0d956e2 100644
+--- a/pointcept/models/threedreftr/captioner_dcc/captioner.py
++++ b/pointcept/models/threedreftr/captioner_dcc/captioner.py
+@@ -9,7 +9,8 @@ from transformers import GPT2Config, GPT2LMHeadModel
+ 
+ from pointcept.models.threedreftr.captioner_dcc.helper import Matcher
+ from pointcept.models.threedreftr.captioner_dcc.generation_utils import generation
+-from pointcept.datasets.scanrefer_jointdc import SCANREFER, ScanReferTokenizer
++# from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER, ScanReferTokenizer
++from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER, ScanReferTokenizer
+ from pointcept.models.losses.vqa_losses import generalized_box_iou3d, box_cxcyczwhd_to_xyzxyz
+ import wandb
+ import numpy as np
+diff --git a/pointcept/models/threedreftr/captioner_dcc/scst.py b/pointcept/models/threedreftr/captioner_dcc/scst.py
+index 16e9193..1597d4f 100644
+--- a/pointcept/models/threedreftr/captioner_dcc/scst.py
++++ b/pointcept/models/threedreftr/captioner_dcc/scst.py
+@@ -4,88 +4,10 @@ from torch import nn, Tensor
+ from pointcept.models.threedreftr.captioner_dcc.cider_scorer import Cider
+ from collections import defaultdict, OrderedDict
+ from typing import List, Dict
++# from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER, ScanReferTokenizer
++from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER, ScanReferTokenizer
+ 
+ 
+-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'  # modify
+-SCANREFER = {
+-    'language': {
+-        'train': json.load(
+-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_train.json"), "r")
+-        ),
+-        'val': json.load(
+-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_val.json"), "r")
+-        )
+-    },
+-    'scene_list': {
+-        'train': open(os.path.join(
+-            DATA_ROOT, 'ScanRefer_filtered_train.txt'
+-        ), 'r').read().split(),
+-        'val': open(os.path.join(
+-            DATA_ROOT, 'ScanRefer_filtered_val.txt'
+-        ), 'r').read().split()
+-    },
+-    'vocabulary': json.load(
+-        open(os.path.join(DATA_ROOT, "ScanRefer_vocabulary.json"), "r")
+-    )
+-}
+-
+-class ScanReferTokenizer:
+-    def __init__(self, word2idx: Dict):
+-        self.word2idx = {word: int(index) for word, index in word2idx.items()}
+-        self.idx2word = {int(index): word for word, index in word2idx.items()}
+-        
+-        self.pad_token = None
+-        self.bos_token = 'sos'
+-        self.bos_token_id = word2idx[self.bos_token]
+-        self.eos_token = 'eos'
+-        self.eos_token_id = word2idx[self.eos_token]
+-        
+-    def __len__(self) -> int: return len(self.word2idx)
+-    
+-    def __call__(self, token: str) -> int: 
+-        token = token if token in self.word2idx else 'unk'
+-        return self.word2idx[token]
+-    
+-    def encode(self, sentence: str) -> List:
+-        if not sentence: 
+-            return []
+-        return [self(word) for word in sentence.split(' ')]
+-    
+-    def batch_encode_plus(
+-        self, sentences: List[str], max_length: int=None, **tokenizer_kwargs: Dict
+-    ) -> Dict:
+-        
+-        raw_encoded = [self.encode(sentence) for sentence in sentences]
+-        
+-        if max_length is None:  # infer if not presented
+-            max_length = max(map(len, raw_encoded))
+-            
+-        token = np.zeros((len(raw_encoded), max_length))
+-        masks = np.zeros((len(raw_encoded), max_length))
+-        
+-        for batch_id, encoded in enumerate(raw_encoded):
+-            length = min(len(encoded), max_length)
+-            if length > 0:
+-                token[batch_id, :length] = encoded[:length]
+-                masks[batch_id, :length] = 1
+-        
+-        if tokenizer_kwargs['return_tensors'] == 'pt':
+-            token, masks = torch.from_numpy(token), torch.from_numpy(masks)
+-        
+-        return {'input_ids': token, 'attention_mask': masks}
+-    
+-    def decode(self, tokens: List[int]) -> List[str]:
+-        out_words = []
+-        for token_id in tokens:
+-            if token_id == self.eos_token_id: 
+-                break
+-            out_words.append(self.idx2word[token_id])
+-        return ' '.join(out_words)
+-    
+-    def batch_decode(self, list_tokens: List[int], **kwargs) -> List[str]:
+-        return [self.decode(tokens) for tokens in list_tokens]
+-    
+-
+ def proposal_dimension_select(features: Tensor, indices: Tensor) -> Tensor:
+     '''
+     
+@@ -110,8 +32,6 @@ def proposal_dimension_select(features: Tensor, indices: Tensor) -> Tensor:
+             *((1, 1) + features.shape[2:])
+         )
+     )
+-
+-
+             
+ class SCST_Training(nn.Module):
+     
+@@ -120,7 +40,7 @@ class SCST_Training(nn.Module):
+         
+         self.scan_list = SCANREFER['scene_list']['train']
+         self.scanrefer = SCANREFER['language']['train']
+-        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_scst_result"  # modify
++        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_scst_result"  # modify
+ 
+         print('preparing N-Grams in Cider Scorer')
+         self.gathered_scanrefer = self.preprocess_and_gather_language()
+diff --git a/pointcept/models/threedreftr/eda.py b/pointcept/models/threedreftr/eda.py
+index 146fbf5..bf30247 100644
+--- a/pointcept/models/threedreftr/eda.py
++++ b/pointcept/models/threedreftr/eda.py
+@@ -51,7 +51,7 @@ class EDA(nn.Module):
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+                  d_model=288, butd=True, pointnet_ckpt=None, 
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+diff --git a/pointcept/models/threedreftr/eda_dc_cross.py b/pointcept/models/threedreftr/eda_dc_cross.py
+index 364c6bd..ecfd2fa 100644
+--- a/pointcept/models/threedreftr/eda_dc_cross.py
++++ b/pointcept/models/threedreftr/eda_dc_cross.py
+@@ -58,7 +58,7 @@ class EDA_dc_cross(nn.Module):
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+                  d_model=288, butd=False, pointnet_ckpt=None, scst=False, # butd
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+@@ -101,7 +101,7 @@ class EDA_dc_cross(nn.Module):
+         if self.butd:
+             self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
+             saved_embeddings = torch.from_numpy(np.load(
+-                '/userhome/lyd/3dvlm/data/class_embeddings3d.npy', allow_pickle=True
++                '/home/lhj/lyd/3DRefTR/data/class_embeddings3d.npy', allow_pickle=True
+             ))
+             self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
+             self.butd_class_embeddings.requires_grad = False
+diff --git a/pointcept/models/threedreftr/eda_ptv2_dc.py b/pointcept/models/threedreftr/eda_ptv2_dc.py
+index ee86a58..eff0f98 100644
+--- a/pointcept/models/threedreftr/eda_ptv2_dc.py
++++ b/pointcept/models/threedreftr/eda_ptv2_dc.py
+@@ -53,7 +53,7 @@ class EDA_dc(nn.Module):
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+                  d_model=288, butd=False, pointnet_ckpt=None, scst=False,
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+diff --git a/pointcept/models/threedreftr/eda_ptv2_dc_cross.py b/pointcept/models/threedreftr/eda_ptv2_dc_cross.py
+index 40169a0..69d079b 100644
+--- a/pointcept/models/threedreftr/eda_ptv2_dc_cross.py
++++ b/pointcept/models/threedreftr/eda_ptv2_dc_cross.py
+@@ -52,8 +52,8 @@ class EDA_dc_cross(nn.Module):
+                  num_queries=256,
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+-                 d_model=288, butd=False, pointnet_ckpt=None, scst=False,
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 d_model=288, butd=False, pointnet_ckpt=None, scst=False, # butd
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+@@ -62,9 +62,10 @@ class EDA_dc_cross(nn.Module):
+         self.num_decoder_layers = num_decoder_layers
+         self.self_position_embedding = self_position_embedding
+         self.contrastive_align_loss = contrastive_align_loss
++        self.butd = butd  # debug
+ 
+         # Visual encoder
+-        self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)  # ptv2
++        self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)
+ 
+         if input_feature_dim == 3 and pointnet_ckpt is not None:
+             self.backbone_net.load_state_dict(torch.load(
+@@ -88,13 +89,24 @@ class EDA_dc_cross(nn.Module):
+             nn.Dropout(0.1)
+         )
+ 
++        # Box encoder
++        if self.butd:
++            self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
++            saved_embeddings = torch.from_numpy(np.load(
++                '/userhome/lyd/3dvlm/data/class_embeddings3d.npy', allow_pickle=True
++            ))
++            self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
++            self.butd_class_embeddings.requires_grad = False
++            self.class_embeddings = nn.Linear(768, d_model - 128)
++            self.box_embeddings = PositionEmbeddingLearned(6, 128)
++
+         # Cross-encoder
+         self.pos_embed = PositionEmbeddingLearned(3, d_model)
+         bi_layer = BiEncoderLayer(
+             d_model, dropout=0.1, activation="relu",
+             n_heads=8, dim_feedforward=256,
+             self_attend_lang=self_attend, self_attend_vis=self_attend,
+-            use_butd_enc_attn=False
++            use_butd_enc_attn=butd
+         )
+         self.cross_encoder = BiEncoder(bi_layer, 3)
+ 
+@@ -116,7 +128,7 @@ class EDA_dc_cross(nn.Module):
+             self.decoder.append(BiDecoderLayer(
+                 d_model, n_heads=8, dim_feedforward=256,
+                 dropout=0.1, activation="relu",
+-                self_position_embedding=self_position_embedding, butd=False
++                self_position_embedding=self_position_embedding, butd=self.butd
+             ))
+ 
+         # Prediction heads
+@@ -150,16 +162,18 @@ class EDA_dc_cross(nn.Module):
+         self.scst_trainging = scst  # scst
+         self.scst_model = SCST_Training()
+ 
++        # Init
+         self.init_bn_momentum()
+     
+     # BRIEF visual and text backbones.
+     def _run_backbones(self, data_dict):
+         """Run visual and text backbones."""
+         # step 1. Visual encoder
+-        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['source_xzy'].shape[0])
++        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['superpoint'].shape[0])
+         end_points['seed_inds'] = end_points['fp2_inds']
+         end_points['seed_xyz'] = end_points['fp2_xyz']
+         end_points['seed_features'] = end_points['fp2_features']
++        end_points['vs_features'] = end_points['seed_features']
+         
+         # step 2. Text encoder
+         tokenized = self.tokenizer.batch_encode_plus(
+@@ -227,8 +241,21 @@ class EDA_dc_cross(nn.Module):
+         superpoint = data_dict['superpoint'] 
+         end_points['superpoints'] = superpoint  # avoid bugs
+         
+-        detected_mask = None
+-        detected_feats = None
++        # STEP 2. Box encoding
++        if self.butd:
++            # attend on those features
++            detected_mask = ~data_dict['det_bbox_label_mask']
++
++            # step box position.    det_boxes ([B, 132, 6]) -->  ([B, 128, 132])
++            box_embeddings = self.box_embeddings(data_dict['det_boxes'])
++            # step box class        det_class_ids ([B, 132])  -->  ([B, 132, 160])
++            class_embeddings = self.class_embeddings(self.butd_class_embeddings(data_dict['det_class_ids']))
++            # step box feature     ([B, 132, 288])
++            detected_feats = torch.cat([box_embeddings, class_embeddings.transpose(1, 2)]
++                                        , 1).transpose(1, 2).contiguous()
++        else:
++            detected_mask = None
++            detected_feats = None
+ 
+         # STEP 3. Cross-modality encoding
+         points_features, text_feats = self.cross_encoder(
+@@ -247,7 +274,6 @@ class EDA_dc_cross(nn.Module):
+         points_features = points_features.contiguous()
+         end_points["text_memory"] = text_feats
+         end_points['seed_features'] = points_features
+-        end_points['vs_features'] = end_points['seed_features']
+         
+         # STEP 4. text projection --> 64
+         if self.contrastive_align_loss:
+@@ -302,8 +328,11 @@ class EDA_dc_cross(nn.Module):
+                 text_feats, query_pos,
+                 query_mask,
+                 text_padding_mask,
+-                detected_feats=None,
+-                detected_mask=None
++                detected_feats=(
++                    detected_feats if self.butd
++                    else None
++                ),
++                detected_mask=detected_mask if self.butd else None
+             )  # (B, V, F)
+             # step project
+             if self.contrastive_align_loss:
+diff --git a/pointcept/models/threedreftr/eda_ptv2_dets3d.py b/pointcept/models/threedreftr/eda_ptv2_dets3d.py
+index f15312e..8db8092 100644
+--- a/pointcept/models/threedreftr/eda_ptv2_dets3d.py
++++ b/pointcept/models/threedreftr/eda_ptv2_dets3d.py
+@@ -50,7 +50,7 @@ class EDA_ptv2(nn.Module):
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+                  d_model=288, butd=False, pointnet_ckpt=None, 
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+diff --git a/pointcept/models/threedreftr/threedreftr_sp.py b/pointcept/models/threedreftr/threedreftr_sp.py
+index ef339db..8b48ce0 100644
+--- a/pointcept/models/threedreftr/threedreftr_sp.py
++++ b/pointcept/models/threedreftr/threedreftr_sp.py
+@@ -56,7 +56,7 @@ class ThreeDRefTR_SP(nn.Module):
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+                  d_model=288, butd=False, pointnet_ckpt=None,  # butd
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+diff --git a/pointcept/models/threedreftr/threedreftr_sp_eda.py b/pointcept/models/threedreftr/threedreftr_sp_eda.py
+index f5e9ea9..d5f6f09 100644
+--- a/pointcept/models/threedreftr/threedreftr_sp_eda.py
++++ b/pointcept/models/threedreftr/threedreftr_sp_eda.py
+@@ -56,7 +56,7 @@ class ThreeDRefTR_SP(nn.Module):
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+                  d_model=288, butd=True, pointnet_ckpt=None,  # butd
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+diff --git a/pointcept/models/threedreftr/threedreftr_sp_selfattn.py b/pointcept/models/threedreftr/threedreftr_sp_selfattn.py
+index 4ef6f09..c0e3945 100644
+--- a/pointcept/models/threedreftr/threedreftr_sp_selfattn.py
++++ b/pointcept/models/threedreftr/threedreftr_sp_selfattn.py
+@@ -56,7 +56,7 @@ class ThreeDRefTR_SP_SelfAttn(nn.Module):
+                  num_decoder_layers=6, self_position_embedding='loc_learned',
+                  contrastive_align_loss=True,
+                  d_model=288, butd=False, pointnet_ckpt=None,  # butd
+-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
++                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
+                  self_attend=True):
+         """Initialize layers."""
+         super().__init__()
+diff --git a/run_task.sh b/run_task.sh
+index 7124a8e..53def1e 100644
+--- a/run_task.sh
++++ b/run_task.sh
+@@ -1,7 +1,7 @@
+ # conda init bash
+ source /opt/conda/etc/profile.d/conda.sh
+ conda activate pointcept102 
+-cd /userhome/lyd/Pointcept/
++cd /home/lhj/lyd/VL-Pointcept/
+ 
+ # scst
+ # sh scripts/train.sh -p python -g 1 -d scanrefer -c eda-s3d-dc-v2c-scst-cross -n eda-dc-v2ctraining-joint10-cross-smalllr2-scst5

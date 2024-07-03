@@ -58,7 +58,7 @@ class EDA_dc_cross(nn.Module):
                  num_decoder_layers=6, self_position_embedding='loc_learned',
                  contrastive_align_loss=True,
                  d_model=288, butd=False, pointnet_ckpt=None, scst=False, # butd
-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
+                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
                  self_attend=True):
         """Initialize layers."""
         super().__init__()
@@ -101,7 +101,7 @@ class EDA_dc_cross(nn.Module):
         if self.butd:
             self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
             saved_embeddings = torch.from_numpy(np.load(
-                '/userhome/lyd/3dvlm/data/class_embeddings3d.npy', allow_pickle=True
+                '/home/lhj/lyd/3DRefTR/data/class_embeddings3d.npy', allow_pickle=True
             ))
             self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
             self.butd_class_embeddings.requires_grad = False

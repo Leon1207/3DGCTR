@@ -209,7 +209,7 @@ class DefaultOnlyCaptioner(nn.Module):
                 return dict(loss=loss)
             else:
                 loss_config = {'reduction': 'none', 'ignore_index': 0}
-                nvocabs = 3433  # lenght of tokneizer
+                nvocabs = 2937  # lenght of tokneizer, 3433 for scanrefer, 2937 for nr3d
                 o = end_points["caption_logits"][0]
                 t = end_points['caption_target']
                 loss_per_word = F.cross_entropy(o.reshape(-1, nvocabs), t.reshape(-1), **loss_config).reshape(t.shape)  

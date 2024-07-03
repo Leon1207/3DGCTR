@@ -52,8 +52,8 @@ class EDA_dc_cross(nn.Module):
                  num_queries=256,
                  num_decoder_layers=6, self_position_embedding='loc_learned',
                  contrastive_align_loss=True,
-                 d_model=288, butd=False, pointnet_ckpt=None, scst=False,
-                 data_path="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/",
+                 d_model=288, butd=False, pointnet_ckpt=None, scst=False, # butd
+                 data_path="/data/pointcloud/data_for_eda/scannet_others_processed/",
                  self_attend=True):
         """Initialize layers."""
         super().__init__()
@@ -62,9 +62,10 @@ class EDA_dc_cross(nn.Module):
         self.num_decoder_layers = num_decoder_layers
         self.self_position_embedding = self_position_embedding
         self.contrastive_align_loss = contrastive_align_loss
+        self.butd = butd  # debug
 
         # Visual encoder
-        self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)  # ptv2
+        self.backbone_net = PMBEMBAttn(in_channels=input_feature_dim)
 
         if input_feature_dim == 3 and pointnet_ckpt is not None:
             self.backbone_net.load_state_dict(torch.load(
@@ -88,13 +89,24 @@ class EDA_dc_cross(nn.Module):
             nn.Dropout(0.1)
         )
 
+        # Box encoder
+        if self.butd:
+            self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
+            saved_embeddings = torch.from_numpy(np.load(
+                '/userhome/lyd/3dvlm/data/class_embeddings3d.npy', allow_pickle=True
+            ))
+            self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
+            self.butd_class_embeddings.requires_grad = False
+            self.class_embeddings = nn.Linear(768, d_model - 128)
+            self.box_embeddings = PositionEmbeddingLearned(6, 128)
+
         # Cross-encoder
         self.pos_embed = PositionEmbeddingLearned(3, d_model)
         bi_layer = BiEncoderLayer(
             d_model, dropout=0.1, activation="relu",
             n_heads=8, dim_feedforward=256,
             self_attend_lang=self_attend, self_attend_vis=self_attend,
-            use_butd_enc_attn=False
+            use_butd_enc_attn=butd
         )
         self.cross_encoder = BiEncoder(bi_layer, 3)
 
@@ -116,7 +128,7 @@ class EDA_dc_cross(nn.Module):
             self.decoder.append(BiDecoderLayer(
                 d_model, n_heads=8, dim_feedforward=256,
                 dropout=0.1, activation="relu",
-                self_position_embedding=self_position_embedding, butd=False
+                self_position_embedding=self_position_embedding, butd=self.butd
             ))
 
         # Prediction heads
@@ -150,16 +162,18 @@ class EDA_dc_cross(nn.Module):
         self.scst_trainging = scst  # scst
         self.scst_model = SCST_Training()
 
+        # Init
         self.init_bn_momentum()
     
     # BRIEF visual and text backbones.
     def _run_backbones(self, data_dict):
         """Run visual and text backbones."""
         # step 1. Visual encoder
-        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['source_xzy'].shape[0])
+        end_points = self.backbone_net(data_dict['point_clouds'], data_dict['offset'], data_dict['superpoint'].shape[0])
         end_points['seed_inds'] = end_points['fp2_inds']
         end_points['seed_xyz'] = end_points['fp2_xyz']
         end_points['seed_features'] = end_points['fp2_features']
+        end_points['vs_features'] = end_points['seed_features']
         
         # step 2. Text encoder
         tokenized = self.tokenizer.batch_encode_plus(
@@ -227,8 +241,21 @@ class EDA_dc_cross(nn.Module):
         superpoint = data_dict['superpoint'] 
         end_points['superpoints'] = superpoint  # avoid bugs
         
-        detected_mask = None
-        detected_feats = None
+        # STEP 2. Box encoding
+        if self.butd:
+            # attend on those features
+            detected_mask = ~data_dict['det_bbox_label_mask']
+
+            # step box position.    det_boxes ([B, 132, 6]) -->  ([B, 128, 132])
+            box_embeddings = self.box_embeddings(data_dict['det_boxes'])
+            # step box class        det_class_ids ([B, 132])  -->  ([B, 132, 160])
+            class_embeddings = self.class_embeddings(self.butd_class_embeddings(data_dict['det_class_ids']))
+            # step box feature     ([B, 132, 288])
+            detected_feats = torch.cat([box_embeddings, class_embeddings.transpose(1, 2)]
+                                        , 1).transpose(1, 2).contiguous()
+        else:
+            detected_mask = None
+            detected_feats = None
 
         # STEP 3. Cross-modality encoding
         points_features, text_feats = self.cross_encoder(
@@ -247,7 +274,6 @@ class EDA_dc_cross(nn.Module):
         points_features = points_features.contiguous()
         end_points["text_memory"] = text_feats
         end_points['seed_features'] = points_features
-        end_points['vs_features'] = end_points['seed_features']
         
         # STEP 4. text projection --> 64
         if self.contrastive_align_loss:
@@ -302,8 +328,11 @@ class EDA_dc_cross(nn.Module):
                 text_feats, query_pos,
                 query_mask,
                 text_padding_mask,
-                detected_feats=None,
-                detected_mask=None
+                detected_feats=(
+                    detected_feats if self.butd
+                    else None
+                ),
+                detected_mask=detected_mask if self.butd else None
             )  # (B, V, F)
             # step project
             if self.contrastive_align_loss:

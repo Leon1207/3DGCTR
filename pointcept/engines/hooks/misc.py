@@ -183,10 +183,10 @@ class CheckpointLoader(HookBase):
             checkpoint = torch.load(self.trainer.cfg.weight, map_location=lambda storage, loc: storage.cuda())
             self.trainer.logger.info(f"Loading layer weights with keyword: {self.keywords}, "
                                      f"replace keyword with: {self.replacement}")
-            # weight = OrderedDict([(key.replace(self.keywords, self.replacement), value)
-            #                       for key, value in checkpoint['state_dict'].items() if self.keywords in key])
-            weight = OrderedDict([(key[:7] + "backbone." + key[7:], value)  # eda weight
-                                  for key, value in checkpoint['model'].items() if self.keywords in key])
+            weight = OrderedDict([(key.replace(self.keywords, self.replacement), value)
+                                  for key, value in checkpoint['state_dict'].items() if self.keywords in key])
+            # weight = OrderedDict([(key[:7] + "backbone." + key[7:], value)  # eda weight
+            #                       for key, value in checkpoint['model'].items() if self.keywords in key])
             # weight = OrderedDict([(key[7:], value)  # four gpu to one gpu
             #                       for key, value in checkpoint['state_dict'].items() if self.keywords in key])
             load_state_info = self.trainer.model.load_state_dict(weight, strict=self.strict)

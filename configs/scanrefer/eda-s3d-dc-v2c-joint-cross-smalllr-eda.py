@@ -9,12 +9,11 @@ batch_size_test = 12
 eval_freq = 1
 find_unused_parameters = True
 # weight = "/userhome/lyd/3dvlm/log/ScanRefer_single_53_83.pth"  # 53.83
-weight = "/userhome/lyd/Pointcept/exp/ckpt_3dreftr_sp_single_40_23.pth"  # 54.43
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd/model/model_best.pth"
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda2/model/model_best.pth"
+# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/3dreftr-sp-v2c-nobutd/model/model_best.pth"
+# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda2/model/model_best.pth"
 
 # testing grounding
-# weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"
+# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-joint10-cross-smalllr2-eda/model/model_best.pth"
 
 hooks = [
     # dict(type="CheckpointLoader", keywords='module.', replacement=''),
@@ -46,7 +45,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 data = dict(
     num_classes=13,
@@ -88,7 +87,7 @@ data = dict(
     train_joint=dict(
         type="Joint3DDataset_v2c",
         split="train",
-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
+        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
@@ -121,7 +120,7 @@ data = dict(
         type="Joint3DDataset_v2c",
         # type=dataset_type,
         split="val",
-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
+        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
         # data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),

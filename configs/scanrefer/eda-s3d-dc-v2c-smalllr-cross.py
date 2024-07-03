@@ -11,8 +11,8 @@ enable_amp = True
 num_worker = 4
 eval_freq = 10
 find_unused_parameters = True
-# weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"
+# weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
+weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"
 
 # model settings
 model = dict(
@@ -33,7 +33,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 hooks = [
     # dict(type="CheckpointLoader", keywords='module.', replacement=''),

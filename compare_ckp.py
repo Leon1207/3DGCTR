@@ -1,8 +1,8 @@
 import torch
 
 # 加载两个检查点
-checkpoint1 = torch.load('/userhome/lyd/Pointcept/exp/model_best_frozen_dcmodel_66_38.pth')
-checkpoint2 = torch.load('/userhome/lyd/Pointcept/exp/scanrefer/debug/model/model_last_6553.pth')
+checkpoint1 = torch.load('/home/lhj/lyd/VL-Pointcept/exp/model_best_frozen_dcmodel_66_38.pth')
+checkpoint2 = torch.load('/home/lhj/lyd/VL-Pointcept/exp/scanrefer/debug/model/model_last_6553.pth')
 
 # 获取参数字典
 state_dict1 = checkpoint1['state_dict']

@@ -141,7 +141,7 @@ class Joint3DDataset_Pretrain(Dataset):
         self.annos = []
 
         # using for processing datasets and save pkl for each scene_room
-        # s3d_data_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}'
+        # s3d_data_path = f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/{split}'
         # total = 3000 if split == 'train' else 250
         # for cnt, (dirpath, _, filenames) in enumerate(os.walk(s3d_data_path)):
         #     print("Process: {}/{}".format(cnt, total))
@@ -169,7 +169,7 @@ class Joint3DDataset_Pretrain(Dataset):
         #             })
         #             pkl_name = scene_id + ".pkl"
         #             save_dict = {scene_id: scan}
-        #             pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + pkl_name, save_dict)
+        #             pickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + pkl_name, save_dict)
 
         #         else:
         #             print("Fliter scene: ", scene_id.split(".")[0])
@@ -177,7 +177,7 @@ class Joint3DDataset_Pretrain(Dataset):
         # print("Finished.")
         
         # using for myself with 10 train set split scene lists
-        # s3d_pkl_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/'
+        # s3d_pkl_path = f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/'
         # for cnt in range(1, 11):
         #     print("Processing... ", cnt)
         #     pkl_name = s3d_pkl_path + "train_s3ds_" + str(cnt) + ".pkl"
@@ -186,25 +186,25 @@ class Joint3DDataset_Pretrain(Dataset):
         #     for key in scans.keys():
         #         scan = scans[key]
         #         save_dict = {key: scan}
-        #         pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/train_scene_pkl/' + key + ".pkl", save_dict)
+        #         pickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/train_scene_pkl/' + key + ".pkl", save_dict)
         
         # using for myself with 1 val set split scene lists
-        # s3d_pkl_path = f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/'
+        # s3d_pkl_path = f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/'
         # pkl_name = s3d_pkl_path + "val_s3ds.pkl"
         # scans = unpickle_data(pkl_name)
         # scans = list(scans)[0]
         # for key in scans.keys():
         #     scan = scans[key]
         #     save_dict = {key: scan}
-        #     pickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_panorama/val_scene_pkl/' + key + ".pkl", save_dict)
+        #     pickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_panorama/val_scene_pkl/' + key + ".pkl", save_dict)
 
         # using after processing, loading each annos and filter invalid scene
         use_pano_psrp = "Only_view"
-        lis_dir = os.listdir(f'/userhome/lyd/Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/')
+        lis_dir = os.listdir(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/')
         for cnt, scene_id in enumerate(lis_dir):
             if cnt % 1000 == 0:
                 print("Filter process: {}/{}".format(cnt, len(lis_dir)))
-            scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/' + scene_id)
+            scan = unpickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/{use_pano_psrp}/{split}_scene_pkl/' + scene_id)
             scan = list(scan)[0][scene_id.split(".")[0]]
 
             keep = np.where(np.array([
@@ -760,7 +760,7 @@ class Joint3DDataset_Pretrain(Dataset):
 
         # step Read annotation and point clouds
         anno = self.annos[index]
-        scan = unpickle_data(f'/userhome/lyd/Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
+        scan = unpickle_data(f'/home/lhj/lyd/VL-Pointcept/data/structured3d/Only_view/{split}_scene_pkl/' + anno['scan_id'] + '.pkl')
         scan = list(scan)[0][anno['scan_id']]
         scan.pc = np.copy(scan.orig_pc)
         superpoint = torch.zeros((1))  # avoid bugs

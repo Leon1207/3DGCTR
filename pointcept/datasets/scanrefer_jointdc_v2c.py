@@ -26,7 +26,7 @@ MEAN_COLOR_RGB = np.array([109.8, 97.2, 83.8])
 MAX_NUM_OBJ = 132
 NUM_CLASSES = 485
 
-DATA_ROOT = '/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/data/'  # modify
+DATA_ROOT = '/data/pointcloud/data_for_vote2cap/data/'  # modify
 SCANREFER = {
     'language': {
         'train': json.load(
@@ -221,7 +221,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
 
     def __init__(self,
                 split="train",
-                data_root='/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/',
+                data_root='/data/pointcloud/data_for_vote2cap/',
                 transform=None,
                 dataset_config=DatasetConfig(),
                 num_points=50000,
@@ -311,7 +311,7 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
         tokens_positive = np.zeros((MAX_NUM_OBJ, 2))
         tokenizer_roberta = \
             RobertaTokenizerFast.from_pretrained(
-                '/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
+                '/data/pointcloud/data_for_eda/scannet_others_processed/roberta-base/', 
                 local_files_only=True)
         
         if isinstance(targets, list):

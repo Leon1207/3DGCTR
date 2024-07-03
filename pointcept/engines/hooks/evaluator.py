@@ -16,7 +16,8 @@ from pointcept.utils.misc import intersection_and_union_gpu
 from pointcept.utils.grounding_evaluator import GroundingEvaluator as Gdeval
 from pointcept.models.losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
 from collections import OrderedDict, defaultdict
-from pointcept.datasets.scanrefer_jointdc import SCANREFER
+# from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER
+from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER
 from pointcept.utils.grounding_evaluator import _iou3d_par, box_cxcyczwhd_to_xyzxyz, box2points
 import pointcept.utils.capeval.bleu.bleu as capblue
 import pointcept.utils.capeval.cider.cider as capcider
@@ -675,7 +676,7 @@ class CaptionEvaluator(HookBase):
                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
         self.test_min_iou = 0.50  # ability
-        self.checkpoint_dir = "/userhome/lyd/Pointcept/exp/captions_result"
+        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_result"
         self.criterion = f'CiDEr@{self.test_min_iou}'
         dataset_config = ScannetDatasetConfig_V2C(18)
         # Used for AP calculation

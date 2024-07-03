@@ -539,7 +539,7 @@ class SetCriterion(nn.Module):
     # Caption Loss
     def loss_caption(self, outputs, targets, indices, num_boxes, auxi_indices):
         loss_config = {'reduction': 'none', 'ignore_index': 0}
-        nvocabs = 3433  # lenght of tokneizer
+        nvocabs = 2937  # lenght of tokneizer,
         losses = {}
         cap_loss = 0.0
         

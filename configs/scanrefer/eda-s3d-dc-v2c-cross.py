@@ -11,7 +11,7 @@ enable_amp = True
 num_worker = 4
 eval_freq = 10
 find_unused_parameters = True
-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
 
 # model settings
 model = dict(
@@ -31,7 +31,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 hooks = [
     # dict(type="CheckpointLoader", keywords='module.', replacement=''),

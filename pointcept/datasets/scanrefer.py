@@ -137,7 +137,7 @@ class Joint3DDataset(Dataset):
         # fetch superpoints
         self.superpoints = {}
         for scan in self.scans:
-            superpoint = torch.load(os.path.join('/userhome/lyd/RES/superpoint', self.split, scan + "_superpoint.pth"))
+            superpoint = torch.load(os.path.join('/data/pointcloud/data_for_eda/scannet_others_processed/superpoint', self.split, scan + "_superpoint.pth"))
             self.superpoints[scan] = superpoint
         
         # step 4. load text dataset

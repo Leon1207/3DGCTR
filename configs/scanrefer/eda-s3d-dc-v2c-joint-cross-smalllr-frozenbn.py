@@ -9,7 +9,7 @@ batch_size_test = 8
 eval_freq = 3
 find_unused_parameters = True
 frozenbn = True
-weight = "/userhome/lyd/Pointcept/exp/model_best_vgmodel.pth"
+weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
 
 
 hooks = [
@@ -40,7 +40,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.1, 0.2])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 data = dict(
     num_classes=13,
@@ -82,7 +82,7 @@ data = dict(
     train_joint=dict(
         type="Joint3DDataset_v2c",
         split="train",
-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
+        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),

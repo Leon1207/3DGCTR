@@ -54,14 +54,14 @@ class Joint3DDataset_v2c(Dataset):
                  split='train',
                  data_root='./',
                  transform=None,
-                 dataset_dict={'scanrefer': 1, 'scannet': 10},
-                 test_dataset='scanrefer',  # det or rec
-                 # dataset_dict={'nr3d': 1, 'scannet': 10},
-                 # test_dataset='nr3d',
+                #  dataset_dict={'scanrefer': 1, 'scannet': 10},
+                #  test_dataset='scanrefer',  # det or rec
+                 dataset_dict={'nr3d': 1, 'scannet': 10},
+                 test_dataset='nr3d',
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
-                 butd=True, butd_gt=False, butd_cls=False, augment_det=True,  # butd
+                 butd=False, butd_gt=False, butd_cls=False, augment_det=False,  # butd
                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
@@ -139,7 +139,7 @@ class Joint3DDataset_v2c(Dataset):
         # fetch superpoints
         self.superpoints = {}
         for scan in self.scans:
-            superpoint = torch.load(os.path.join('/userhome/lyd/RES/superpoint', self.split, scan + "_superpoint.pth"))
+            superpoint = torch.load(os.path.join('/data/pointcloud/data_for_eda/scannet_others_processed/superpoint', self.split, scan + "_superpoint.pth"))
             self.superpoints[scan] = superpoint
         
         # step 4. load text dataset

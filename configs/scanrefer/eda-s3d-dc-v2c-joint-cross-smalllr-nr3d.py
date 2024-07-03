@@ -8,7 +8,8 @@ batch_size_val = 8
 batch_size_test = 8
 eval_freq = 1
 find_unused_parameters = True
-weight = "/userhome/lyd/Pointcept/exp/scanrefer/3dreftr_sp_ptv2maxpool_coord1024_nobutd_nr3d/model/model_best.pth"
+# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d/model/model_best.pth"
+weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d-diff-keep2/model/model_best.pth"
 
 hooks = [
     dict(type="CheckpointLoader"), 
@@ -24,7 +25,7 @@ model = dict(
     type="DefaultCaptioner",
     backbone=dict(
         type="eda_ptv2_dc_cross",
-        butd=False  # not used butd
+        butd=False
     ),
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
@@ -38,7 +39,7 @@ scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
 
 # dataset settings
 dataset_type = "Joint3DDataset_JointDC_v2c_nr3d"
-data_root = "/userhome/backup_lhj/lhj/pointcloud/Vote2Cap-DETR/"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 data = dict(
     num_classes=13,
@@ -80,7 +81,7 @@ data = dict(
     train_joint=dict(
         type="Joint3DDataset_v2c",
         split="train",
-        data_root="/userhome/backup_lhj/dataset/pointcloud/data_for_eda/scannet_others_processed",
+        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
