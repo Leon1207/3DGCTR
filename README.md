@@ -1,5 +1,5 @@
 
-This is a PyTorch implementation of 3DRefTR proposed by our paper [Rethinking 3D Dense Caption and Visual Grounding in A Unified Framework through Prompt-based Localization](https://arxiv.org/abs/2404.11064).
+This is a PyTorch implementation of 3DGCTR proposed by our paper [Rethinking 3D Dense Caption and Visual Grounding in A Unified Framework through Prompt-based Localization](https://arxiv.org/abs/2404.11064).
 
 ## 0. Install
 
