@@ -1,36 +1,44 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-batch_size = 32 # bs: total bs in all gpus 32
+batch_size = 32 # bs: total bs in all gpus  32
 mix_prob = 0.8
-empty_cache = False
 enable_amp = True
-num_worker = 8
-batch_size_val = 8  # 8
-batch_size_test = 8  # 8
-find_unused_parameters = True
+num_worker = 4
+batch_size_val = 8
+batch_size_test = 8
 eval_freq = 1
-weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/semseg-3dreftr-ptv2maxpool-v2c-nr3d-diff/model/model_best.pth"
-# weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-s3d-dc-v2c-joint-cross-smalllr-nr3d-diff-keep2/model/model_best.pth"
+find_unused_parameters = True
+weight = "Nr3D_3DVG_pretrain/model/model_best.pth"
+
+hooks = [
+    dict(type="CheckpointLoader"), 
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
 
 # model settings
 model = dict(
-    type="DefaultGrounder",
+    type="DefaultCaptioner",
     backbone=dict(
-        type="3dreftr",
+        type="eda_ptv2_dc_cross",
         butd=False
     ),
+    losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 
 # scheduler settings
-epoch = 100
-eval_epoch = 100
-optimizer = dict(type="AdamW", lr=1e-5, weight_decay=0.0005)
-param_dicts = [dict(keyword="backbone_net", lr=1e-4, weight_decay=0.0005)]
-scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.8])
+epoch = 20
+eval_epoch = 20
+optimizer = dict(type="AdamW", lr=1e-6, weight_decay=0.0005)
+param_dicts = [dict(keyword="captioner", lr=1e-4, weight_decay=0.0005)]
+scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.6, 0.8])
 
 # dataset settings
-dataset_type = "Joint3DDataset_v2c"
-data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
+dataset_type = "Joint3DDataset_JointDC_v2c_nr3d_butd"
+data_root = "/data/pointcloud/data_for_vote2cap/"
 
 data = dict(
     num_classes=13,
@@ -41,6 +49,38 @@ data = dict(
         type=dataset_type,
         split="train",
         data_root=data_root,
+        transform=[
+            dict(type="CenterShift", apply_z=True),
+            dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
+            # dict(type="RandomRotateTargetAngle", angle=(1/2, 1, 3/2), center=[0, 0, 0], axis="z", p=0.75),
+            dict(type="RandomRotate", angle=[-1, 1], axis="z", center=[0, 0, 0], p=0.5),
+            dict(type="RandomRotate", angle=[-1/64, 1/64], axis="x", p=0.5),
+            dict(type="RandomRotate", angle=[-1/64, 1/64], axis="y", p=0.5),
+            dict(type="RandomScale", scale=[0.9, 1.1]),
+            # dict(type="RandomShift", shift=[0.2, 0.2, 0.2]),
+            dict(type="RandomFlip", p=0.5),
+            dict(type="RandomJitter", sigma=0.005, clip=0.02),
+            dict(type="ElasticDistortion", distortion_params=[[0.2, 0.4], [0.8, 1.6]]),
+            dict(type="ChromaticAutoContrast", p=0.2, blend_factor=None),
+            dict(type="ChromaticTranslation", p=0.95, ratio=0.05),
+            dict(type="ChromaticJitter", p=0.95, std=0.05),
+            # dict(type="HueSaturationTranslation", hue_max=0.2, saturation_max=0.2),
+            # dict(type="RandomColorDrop", p=0.2, color_augment=0.0),
+            dict(type="GridSample", grid_size=0.05, hash_type="fnv", mode="train",
+                 keys=("coord", "color", "segment"), return_discrete_coord=True),
+            dict(type="SphereCrop", point_max=100000, mode="random"),
+            dict(type="CenterShift", apply_z=False),
+            dict(type="NormalizeColor"),
+            dict(type="ShufflePoint"),
+            dict(type="ToTensor"),
+            dict(type="Collect", keys=("coord", "discrete_coord", "segment"), feat_keys=["coord", "color"])
+        ],
+        test_mode=False
+    ),
+    train_joint=dict(
+        type="Joint3DDataset_v2c",
+        split="train",
+        data_root="/data/pointcloud/data_for_eda/scannet_others_processed",
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
@@ -131,17 +171,9 @@ data = dict(
     )
 )
 
-hooks = [
-    dict(type="CheckpointLoader"),
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="GroundingEvaluator"),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
-
 # tester
 test = dict(
-    type="GroundingTester"
+    type="CaptionTester",
+    losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 

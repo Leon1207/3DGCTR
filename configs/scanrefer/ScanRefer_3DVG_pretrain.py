@@ -1,49 +1,34 @@
 _base_ = ["../_base_/default_runtime.py"]
 # misc custom setting
-# bs: total bs in all gpus 64, multi gpus needs to change the checkpoint keys.
-
-batch_size = 6 
-batch_size_val = 6
-batch_size_test = 6
-
+batch_size = 32 # bs: total bs in all gpus 32
 mix_prob = 0.8
+empty_cache = False
 enable_amp = True
-num_worker = 4
-eval_freq = 10
+num_worker = 8
+batch_size_val = 8  # 8
+batch_size_test = 8  # 8
 find_unused_parameters = True
-# weight = "/home/lhj/lyd/VL-Pointcept/exp/model_best_vgmodel.pth"
-weight = "/home/lhj/lyd/VL-Pointcept/exp/scanrefer/eda-dc-v2ctraining-smalllr-cross/model/model_best.pth"
+eval_freq = 3 
 
 # model settings
 model = dict(
-    type="DefaultCaptioner",
+    type="DefaultGrounder",
     backbone=dict(
-        type="eda_ptv2_dc_cross",
-        butd=False  # not used butd
+        type="3dreftr",
+        butd=False
     ),
-    losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 
 # scheduler settings
-epoch = 400
-eval_epoch = 400
-optimizer = dict(type="AdamW", lr=2e-6, weight_decay=0.0005)
-param_dicts = [dict(keyword="captioner", lr=2e-4, weight_decay=0.0005)]
+epoch = 100
+eval_epoch = 100
+optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.0005)
+param_dicts = [dict(keyword="backbone_net", lr=2e-3, weight_decay=0.0005)]
 scheduler = dict(type="MultiStepLR", gamma=0.1, milestones=[0.5, 0.75])
 
 # dataset settings
-dataset_type = "Joint3DDataset_JointDC_v2c"
-data_root = "/data/pointcloud/data_for_vote2cap/"
-
-hooks = [
-    # dict(type="CheckpointLoader", keywords='module.', replacement=''),
-    dict(type="CheckpointLoader"),
-    dict(type="IterationTimer", warmup_iter=2),
-    dict(type="InformationWriter"),
-    dict(type="CaptionEvaluator", losses=['boxes', 'labels', 'contrastive_align', 'captions']),
-    dict(type="CheckpointSaver", save_freq=None),
-    dict(type="PreciseEvaluator", test_last=False)
-]
+dataset_type = "Joint3DDataset_v2c"
+data_root = "/data/pointcloud/data_for_eda/scannet_others_processed"
 
 data = dict(
     num_classes=13,
@@ -144,9 +129,17 @@ data = dict(
     )
 )
 
+hooks = [
+    dict(type="CheckpointLoader"),
+    dict(type="IterationTimer", warmup_iter=2),
+    dict(type="InformationWriter"),
+    dict(type="GroundingEvaluator"),
+    dict(type="CheckpointSaver", save_freq=None),
+    dict(type="PreciseEvaluator", test_last=False)
+]
+
 # tester
 test = dict(
-    type="DetTester",
-    losses=['boxes', 'labels', 'contrastive_align', 'captions']
+    type="GroundingTester"
 )
 

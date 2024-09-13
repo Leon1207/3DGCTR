@@ -54,10 +54,8 @@ class Joint3DDataset_v2c(Dataset):
                  split='train',
                  data_root='./',
                  transform=None,
-                #  dataset_dict={'scanrefer': 1, 'scannet': 10},
-                #  test_dataset='scanrefer',  # det or rec
-                 dataset_dict={'nr3d': 1, 'scannet': 10},
-                 test_dataset='nr3d',
+                 dataset_dict={'scanrefer': 1, 'scannet': 10},
+                 test_dataset='scanrefer',  # det or rec
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
@@ -121,8 +119,8 @@ class Joint3DDataset_v2c(Dataset):
         # 2) offline
         self.tokenizer = RobertaTokenizerFast.from_pretrained(f'{self.data_path}/roberta-base/', local_files_only=True)
         
-        if os.path.exists('data/cls_results.json'):
-            with open('data/cls_results.json') as fid:
+        if os.path.exists('cls_results.json'):
+            with open('cls_results.json') as fid:
                 self.cls_results = json.load(fid)
 
         print('Loading %s files, take a breath!' % split)

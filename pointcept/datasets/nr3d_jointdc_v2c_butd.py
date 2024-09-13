@@ -298,8 +298,8 @@ class Joint3DDataset_JointDC_v2c_nr3d_butd(torch.utils.data.Dataset):
         self.scans = unpickle_data(f'/data/pointcloud/data_for_eda/scannet_others_processed/{split}_v3scans.pkl')
         self.scans = list(self.scans)[0]
 
-        if os.path.exists('/home/lhj/lyd/3DRefTR/data/cls_results.json'):
-            with open('/home/lhj/lyd/3DRefTR/data/cls_results.json') as fid:
+        if os.path.exists('cls_results.json'):
+            with open('cls_results.json') as fid:
                 self.cls_results = json.load(fid)
 
     def default_dict_factory(self):

@@ -93,7 +93,7 @@ class EDA_dc_cross(nn.Module):
         if self.butd:
             self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
             saved_embeddings = torch.from_numpy(np.load(
-                '/userhome/lyd/3dvlm/data/class_embeddings3d.npy', allow_pickle=True
+                '/home/lyd/VL-Pointcept/class_embeddings3d.npy', allow_pickle=True
             ))
             self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
             self.butd_class_embeddings.requires_grad = False

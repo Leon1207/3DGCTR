@@ -40,7 +40,7 @@ class SCST_Training(nn.Module):
         
         self.scan_list = SCANREFER['scene_list']['train']
         self.scanrefer = SCANREFER['language']['train']
-        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_scst_result"  # modify
+        self.checkpoint_dir = "exp/caption_scst_result"  # modify
 
         print('preparing N-Grams in Cider Scorer')
         self.gathered_scanrefer = self.preprocess_and_gather_language()

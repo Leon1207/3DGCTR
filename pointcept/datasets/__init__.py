@@ -4,6 +4,8 @@ from .s3dis import S3DISDataset
 from .scannet import ScanNetDataset, ScanNet200Dataset
 from .scanrefer import Joint3DDataset
 from .scanrefer_v2c import Joint3DDataset_v2c
+from .sr3d_v2c import Joint3DDataset_sr3d
+from .nr3d_v2c import Joint3DDataset_nr3d
 from .scanrefer_jointdc_v2c import Joint3DDataset_JointDC_v2c
 from .scanrefer_jointdc_v2c_butd import Joint3DDataset_JointDC_v2c_butd
 from .nr3d_jointdc_v2c import Joint3DDataset_JointDC_v2c_nr3d 

@@ -259,9 +259,8 @@ class Joint3DDataset_JointDC_v2c(torch.utils.data.Dataset):
             
             self.scanrefer = SCANREFER['language'][split]
             self.scan_names = SCANREFER['scene_list'][split]
-            # self.scan_names = self.scan_names[:10]  # debug
 
-            # for joint training
+            # for joint training in MLE, not SCST/onlyDC
             if split == "train":
                 self.scan_names = SCANREFER['scene_list'][split] * 10
 

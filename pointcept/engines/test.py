@@ -355,7 +355,7 @@ class GroundingTester(object):
             # Accumulate statistics and print out
             stat_dict = {}
             stat_dict = self._accumulate_stats(stat_dict, end_points)
-            if (batch_idx + 1) % 500 == 0:
+            if (batch_idx + 1) % 50 == 0:
                 logger.info(f'Eval: [{batch_idx + 1}/{len(test_loader)}]  ')
                 logger.info(''.join([
                     f'{key} {stat_dict[key] / (float(batch_idx + 1)):.4f} \t'
@@ -426,8 +426,8 @@ class CaptionTester(object):
     def __init__(self, 
                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
-        self.test_min_iou = 0.50
-        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_result"
+        self.test_min_iou = 0.5
+        self.checkpoint_dir = "/home/lyd/VL-Pointcept/exp/caption_result"
         dataset_config = ScannetDatasetConfig_V2C(18)
         # Used for AP calculation
         self.config_dict = {
@@ -445,7 +445,7 @@ class CaptionTester(object):
         logger.info('>>>>>>>>>>>>>>>> Start Testing >>>>>>>>>>>>>>>>')
         model.eval()
 
-        if self.checkpoint_dir.split("/")[-1] == 'captions_result':
+        if self.checkpoint_dir.split("/")[-1] == 'caption_result':
             self.checkpoint_dir = self.checkpoint_dir + "/" + cfg.save_path.split("/")[-1]
         
         # prepare ground truth caption labels

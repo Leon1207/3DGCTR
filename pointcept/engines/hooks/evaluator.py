@@ -505,7 +505,7 @@ class GroundingEvaluator(HookBase):
                 self.eval()
             else:
                 self.trainer.comm_info["current_metric_value"] = 0.0  # save for saver
-                self.trainer.comm_info["current_metric_name"] = "RES_mIoU"  # save for saver
+                self.trainer.comm_info["current_metric_name"] = "REC_0.25IoU"  # save for saver
 
     def eval(self):
         self.trainer.logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
@@ -571,7 +571,7 @@ class GroundingEvaluator(HookBase):
                     evaluator.evaluate(end_points, prefix)  
 
             self.trainer.comm_info["current_metric_value"] = evaluator.get_best()  # save for saver
-            self.trainer.comm_info["current_metric_name"] = "RES_mIoU"  # save for saver
+            self.trainer.comm_info["current_metric_name"] = "REC_0.25IoU"  # save for saver
             
         evaluator.print_stats()
         self.trainer.logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
@@ -676,7 +676,7 @@ class CaptionEvaluator(HookBase):
                  losses=['boxes', 'labels', 'contrastive_align', 'captions']):
         super().__init__()
         self.test_min_iou = 0.50  # ability
-        self.checkpoint_dir = "/home/lhj/lyd/VL-Pointcept/exp/captions_result"
+        self.checkpoint_dir = "exp/captions_result"
         self.criterion = f'CiDEr@{self.test_min_iou}'
         dataset_config = ScannetDatasetConfig_V2C(18)
         # Used for AP calculation

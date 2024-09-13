@@ -212,7 +212,7 @@ class GroundingEvaluator:
             self.logger.info('hard50' + ' ' +  str(self.dets['hard50_mask'] / self.gts['hard_num']))
 
     def get_best(self):
-        return self.dets['mask_sem'] / self.gts['mask_sem']
+        return self.dets[("last_", 0.25, 1, "bbf")] / max(self.gts[("last_", 0.25, 1, "bbf")], 1)
 
     def synchronize_between_processes(self):
         all_dets = misc.all_gather(self.dets)

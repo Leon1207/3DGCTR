@@ -85,7 +85,6 @@ def generalized_box_iou3d(boxes1, boxes2):
     """
     # degenerate boxes gives inf / nan results
     # so do an early check
-
     assert (boxes1[:, 3:] >= boxes1[:, :3]).all()
     assert (boxes2[:, 3:] >= boxes2[:, :3]).all()
     iou, union = _iou3d_par(boxes1, boxes2)
@@ -539,7 +538,7 @@ class SetCriterion(nn.Module):
     # Caption Loss
     def loss_caption(self, outputs, targets, indices, num_boxes, auxi_indices):
         loss_config = {'reduction': 'none', 'ignore_index': 0}
-        nvocabs = 2937  # lenght of tokneizer,
+        nvocabs = 2937  # lenght of tokneizer, 3433 for scanrefer, 2937 for nr3d
         losses = {}
         cap_loss = 0.0
         

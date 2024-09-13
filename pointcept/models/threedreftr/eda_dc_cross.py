@@ -67,7 +67,7 @@ class EDA_dc_cross(nn.Module):
         self.num_decoder_layers = num_decoder_layers
         self.self_position_embedding = self_position_embedding
         self.contrastive_align_loss = contrastive_align_loss
-        self.butd = butd  # debug
+        self.butd = butd
 
         # Visual encoder
         self.backbone_net = Pointnet2Backbone(input_feature_dim=input_feature_dim, width=1)
@@ -101,7 +101,7 @@ class EDA_dc_cross(nn.Module):
         if self.butd:
             self.butd_class_embeddings = nn.Embedding(num_obj_class, 768)
             saved_embeddings = torch.from_numpy(np.load(
-                '/home/lhj/lyd/3DRefTR/data/class_embeddings3d.npy', allow_pickle=True
+                '/home/lhj/3DRefTR/data/class_embeddings3d.npy', allow_pickle=True
             ))
             self.butd_class_embeddings.weight.data.copy_(saved_embeddings)
             self.butd_class_embeddings.requires_grad = False

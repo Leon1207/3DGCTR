@@ -30,13 +30,10 @@ from .transform import Compose, TRANSFORMS
 
 import copy
 
-from .preprocessing.scanrefer.model_util_scannet_v2c import ScannetDatasetConfig_V2C
+from .preprocessing.scanrefer.model_util_scannet import ScannetDatasetConfig
 from .preprocessing.scanrefer.scannet_utils import read_label_mapping
 from .preprocessing.scanrefer.visual_data_handlers import Scan
 from .preprocessing.scanrefer.scannet_classes import REL_ALIASES, VIEW_DEP_RELS
-import wandb
-from typing import List, Dict
-import tqdm
 
 # NOTE sng_parser
 import sys, os
@@ -44,104 +41,25 @@ sys.path.append(os.getcwd())
 from .preprocessing.scanrefer import sng_parser
 
 NUM_CLASSES = 485
-DC = ScannetDatasetConfig_V2C(NUM_CLASSES)
-DC18 = ScannetDatasetConfig_V2C(18)
+DC = ScannetDatasetConfig(NUM_CLASSES)
+DC18 = ScannetDatasetConfig(18)
 MAX_NUM_OBJ = 132
-
-DATA_ROOT = 'datasets/preprocessing/scanrefer/meta_data'  # modify
-SCANREFER = {
-    'language': {
-        'train': json.load(
-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_train.json"), "r")
-        ),
-        'val': json.load(
-            open(os.path.join(DATA_ROOT, "ScanRefer_filtered_val.json"), "r")
-        )
-    },
-    'scene_list': {
-        'train': open(os.path.join(
-            DATA_ROOT, 'ScanRefer_filtered_train.txt'
-        ), 'r').read().split(),
-        'val': open(os.path.join(
-            DATA_ROOT, 'ScanRefer_filtered_val.txt'
-        ), 'r').read().split()
-    },
-    'vocabulary': json.load(
-        open(os.path.join(DATA_ROOT, "ScanRefer_vocabulary.json"), "r")
-    )
-}
-
-class ScanReferTokenizer:
-    def __init__(self, word2idx: Dict):
-        self.word2idx = {word: int(index) for word, index in word2idx.items()}
-        self.idx2word = {int(index): word for word, index in word2idx.items()}
-        
-        self.pad_token = None
-        self.bos_token = 'sos'
-        self.bos_token_id = word2idx[self.bos_token]
-        self.eos_token = 'eos'
-        self.eos_token_id = word2idx[self.eos_token]
-        
-    def __len__(self) -> int: return len(self.word2idx)
-    
-    def __call__(self, token: str) -> int: 
-        token = token if token in self.word2idx else 'unk'
-        return self.word2idx[token]
-    
-    def encode(self, sentence: str) -> List:
-        if not sentence: 
-            return []
-        return [self(word) for word in sentence.split(' ')]
-    
-    def batch_encode_plus(
-        self, sentences: List[str], max_length: int=None, **tokenizer_kwargs: Dict
-    ) -> Dict:
-        
-        raw_encoded = [self.encode(sentence) for sentence in sentences]
-        
-        if max_length is None:  # infer if not presented
-            max_length = max(map(len, raw_encoded))
-            
-        token = np.zeros((len(raw_encoded), max_length))
-        masks = np.zeros((len(raw_encoded), max_length))
-        
-        for batch_id, encoded in enumerate(raw_encoded):
-            length = min(len(encoded), max_length)
-            if length > 0:
-                token[batch_id, :length] = encoded[:length]
-                masks[batch_id, :length] = 1
-        
-        if tokenizer_kwargs['return_tensors'] == 'pt':
-            token, masks = torch.from_numpy(token), torch.from_numpy(masks)
-        
-        return {'input_ids': token, 'attention_mask': masks}
-    
-    def decode(self, tokens: List[int]) -> List[str]:
-        out_words = []
-        for token_id in tokens:
-            if token_id == self.eos_token_id: 
-                break
-            out_words.append(self.idx2word[token_id])
-        return ' '.join(out_words)
-    
-    def batch_decode(self, list_tokens: List[int], **kwargs) -> List[str]:
-        return [self.decode(tokens) for tokens in list_tokens]
 
 
 @DATASETS.register_module()
-class Joint3DDataset_JointDC(Dataset):
+class Joint3DDataset_sr3d(Dataset):
     """Dataset utilities for ReferIt3D."""
 
     def __init__(self, 
                  split='train',
-                 data_root='/data/pointcloud/data_for_eda/scannet_others_processed',
+                 data_root='./',
                  transform=None,
-                 dataset_dict={'scanrefer': 1, 'scannet': 10, 'scannetdc': 1},  # training on rec
-                 test_dataset='scannet',
+                 dataset_dict={'sr3d': 1, 'scannet': 10},
+                 test_dataset='sr3d',  # det or rec
                  overfit=False,
                  use_color=True, use_height=False, use_multiview=False,
                  detect_intermediate=True,
-                 butd=False, butd_gt=False, butd_cls=False, augment_det=False,
+                 butd=False, butd_gt=False, butd_cls=True, augment_det=True,  # butd
                  wo_obj_name="None", test_mode=False, test_cfg=None, loop=1):
         """Initialize dataset (here for ReferIt3D utterances)."""
         self.dataset_dict = dataset_dict
@@ -157,9 +75,10 @@ class Joint3DDataset_JointDC(Dataset):
         self.transform = Compose(transform)
         self.use_multiview = use_multiview
         self.data_path = data_root
-        self.butd = False
-        self.butd_gt = False
-        self.butd_cls = True  # align
+        self.visualization_superpoint = False  # manually set this to True to debug
+        self.butd = butd  # butd
+        self.butd_gt = butd_gt
+        self.butd_cls = butd_cls
         self.loop = loop if not test_mode else 1
         self.joint_det = (  # joint usage of detection/grounding phrases
             'scannet' in dataset_dict
@@ -195,17 +114,13 @@ class Joint3DDataset_JointDC(Dataset):
         self.multiview_data = {}
 
         # step 2. transformer tokenizer
+        # # 1) online
+        # self.tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+        # 2) offline
         self.tokenizer = RobertaTokenizerFast.from_pretrained(f'{self.data_path}/roberta-base/', local_files_only=True)
-        # prepared dense caption's tokenizer
-        self.tokenizer_dc = ScanReferTokenizer(SCANREFER['vocabulary']['word2idx'])
-        self.tokenizer_dc.pad_token = self.tokenizer_dc.eos_token
-        self.scanrefer = SCANREFER['language'][self.split]
-        self.scan_names = SCANREFER['scene_list'][self.split]
-        self.gathered_language = self.preprocess_and_gather_language()
-        self.max_des_len = 32  # dense caption length
-
-        if os.path.exists('data/cls_results.json'):
-            with open('data/cls_results.json') as fid:
+        
+        if os.path.exists('/home/lyd/VL-Pointcept/cls_results.json'):
+            with open('/home/lyd/VL-Pointcept/cls_results.json') as fid:
                 self.cls_results = json.load(fid)
 
         print('Loading %s files, take a breath!' % split)
@@ -213,17 +128,19 @@ class Joint3DDataset_JointDC(Dataset):
         # step 3. generate or load train/val_v3scans.pkl
         if not os.path.exists(f'{self.data_path}/{split}_v3scans.pkl'):
             save_data(f'{data_root}/{split}_v3scans.pkl', split, "/userhome/backup_lhj/dataset/pointcloud/scannet_all/scannet-sparse/raw/")
-        tmp_list = unpickle_data(f'{self.data_path}/{split}_v3scans.pkl')
-        tmp_list = list(tmp_list)[0]
-        self.scans = {}
-        # filter scene which not used in scanrefer dense caption
-        filter_scene = ["scene0154_00"]  # no object scene
-        for key in self.gathered_language.keys():
-            if key not in filter_scene:
-                self.scans[key] = tmp_list[key]  
-        del tmp_list
+        # if not os.path.exists(f'{self.data_path}/{split}_v3scans_full.pkl'):
+        #     save_data(f'{data_root}/{split}_v3scans_full.pkl', split, "/userhome/backup_lhj/dataset/pointcloud/scannet_all/scannet-sparse/raw/")
+        self.scans = unpickle_data(f'{self.data_path}/{split}_v3scans.pkl')
+        # self.scans = unpickle_data(f'{self.data_path}/{split}_v3scans_full.pkl')  # full points
+        self.scans = list(self.scans)[0]
+
+        # fetch superpoints
+        self.superpoints = {}
+        for scan in self.scans:
+            superpoint = torch.load(os.path.join('/data/pointcloud/data_for_eda/scannet_others_processed/superpoint', self.split, scan + "_superpoint.pth"))
+            self.superpoints[scan] = superpoint
         
-        # step 5. load text dataset
+        # step 4. load text dataset
         if self.split != 'train':
             self.annos = self.load_annos(test_dataset)
         else:
@@ -232,7 +149,6 @@ class Joint3DDataset_JointDC(Dataset):
                 if cnt > 0:
                     _annos = self.load_annos(dset)
                     self.annos += (_annos * cnt)
-            # self.annos = self.annos[:100]  # debug
 
     # BRIEF load text data
     def load_annos(self, dset):
@@ -242,8 +158,7 @@ class Joint3DDataset_JointDC(Dataset):
             'sr3d': self.load_sr3d_annos,
             'sr3d+': self.load_sr3dplus_annos,
             'scanrefer': self.load_scanrefer_annos, # scanrefer
-            'scannet': self.load_scannet_annos,      # scannet detection augmentation
-            'scannetdc': self.load_scannetdc_annos,
+            'scannet': self.load_scannet_annos      # scannet detection augmentation
         }
         annos = loaders[dset]()
         if self.overfit:
@@ -366,7 +281,7 @@ class Joint3DDataset_JointDC(Dataset):
                 'anchor_ids': [],   
                 'dataset': 'scanrefer'
             }
-            for anno in reader[:100]  # debug
+            for anno in reader  # debug
             if anno['scene_id'] in scan_ids
         ]
 
@@ -468,45 +383,6 @@ class Joint3DDataset_JointDC(Dataset):
                 if a not in {965, 977}
             ]
         return annos
-
-    # BRIEF scannet detection prompt.
-    def load_scannetdc_annos(self):
-        """Load annotations of scannet."""
-        split = 'train' if self.split == 'train' else 'val'
-        with open('pointcept/datasets/preprocessing/scanrefer/meta_data/scannetv2_%s.txt' % split) as f:
-            scan_ids = [line.rstrip() for line in f]
-
-        annos = []
-        for scan_id in scan_ids:
-            if scan_id not in list(self.scans.keys()):
-                continue
-
-            scan = self.scans[scan_id]
-            # Ignore scans that have no object in our vocabulary
-            keep = np.array([
-                self.label_map[
-                    scan.get_object_instance_label(ind)
-                ] in DC.nyu40id2class
-                for ind in range(len(scan.three_d_objects))
-            ])
-            if keep.any():
-                # this will get populated randomly each time
-                annos.append({
-                    'scan_id': scan_id,
-                    'target_id': [],
-                    'distractor_ids': [],
-                    'utterance': '',
-                    'target': [],
-                    'anchors': [],
-                    'anchor_ids': [],
-                    'dataset': 'scannetdc'
-                })
-        if self.split == 'train':
-            annos = [
-                anno for a, anno in enumerate(annos)
-                if a not in {965, 977}
-            ]
-        return annos
     
     # BRIEF smaple classes for detection prompt
     def _sample_classes(self, scan_id):
@@ -524,17 +400,11 @@ class Joint3DDataset_JointDC(Dataset):
             ret = [DC.class2type[DC.nyu40id2class[i]] for i in sampled_classes]
             random.shuffle(ret)
         else:
-            # ret = [
-            #     'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
-            #     'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
-            #     'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-            #     'other furniture'
-            # ]
             ret = [
-                'cabinet', 'bed', 'chair', 'sofa', 'table', 'door',
+                'cabinet', 'bed', 'chair', 'couch', 'table', 'door',
                 'window', 'bookshelf', 'picture', 'counter', 'desk', 'curtain',
                 'refrigerator', 'shower curtain', 'toilet', 'sink', 'bathtub',
-                'others'
+                'other furniture'
             ]
         return ret
     
@@ -998,22 +868,6 @@ class Joint3DDataset_JointDC(Dataset):
             all_detected_bboxes, all_detected_bbox_label_mask,
             detected_class_ids, detected_logits
         )
-    
-    def nested_dict(self):
-        return defaultdict(list)  # allow pickle
-
-    def preprocess_and_gather_language(self):
-        
-        gathered_language = defaultdict(self.nested_dict)
-        
-        for lang_dict in tqdm.tqdm(self.scanrefer):
-            scene_id  = lang_dict['scene_id']
-            object_id = int(lang_dict['object_id'])
-            
-            sentence  = ' '.join(lang_dict['token'] + [self.tokenizer_dc.eos_token])
-            gathered_language[scene_id][object_id].append(sentence)
-        
-        return gathered_language
 
     # BRIEF data
     def __getitem__(self, index):
@@ -1024,18 +878,15 @@ class Joint3DDataset_JointDC(Dataset):
         language_dataset = self.test_dataset
 
         # step Read annotation and point clouds
-        anno = self.annos[index] #len(self.annos) 561
+        anno = self.annos[index]
         scan = self.scans[anno['scan_id']]
         scan.pc = np.copy(scan.orig_pc)
-        superpoint = torch.zeros((1))  # avoid bugs
+        superpoint = self.superpoints[anno['scan_id']]
 
         # step constract anno (used only for [scannet])
         self.random_utt = False
-        if (anno['dataset'] == 'scannet') or (anno['dataset'] == 'scannetdc'):
-            
-            if anno['dataset'] == 'scannet':
-                self.random_utt = self.joint_det and np.random.random() > 0.5
-
+        if anno['dataset'] == 'scannet':
+            self.random_utt = self.joint_det and np.random.random() > 0.5
             sampled_classes = self._sample_classes(anno['scan_id'])
             utterance = self._create_scannet_utterance(sampled_classes)
             
@@ -1044,8 +895,8 @@ class Joint3DDataset_JointDC(Dataset):
                     self.label_map18[
                         scan.get_object_instance_label(ind)
                     ] in DC18.nyu40id2class
-                    for ind in range(len(scan.three_d_objects)) # scene0364_00 len(scan.three_d_objects) 17
-                ])[:MAX_NUM_OBJ])[0].tolist() 
+                    for ind in range(len(scan.three_d_objects))
+                ])[:MAX_NUM_OBJ])[0].tolist()  # target_id是相对于整个scene拥有的object的index
             else:
                 anno['target_id'] = np.where(np.array([
                     self.label_map[
@@ -1054,7 +905,7 @@ class Joint3DDataset_JointDC(Dataset):
                     and
                     DC.class2type[DC.nyu40id2class[self.label_map[
                         scan.get_object_instance_label(ind)
-                    ]]] in sampled_classes  # use 18 classes to filter target_id
+                    ]]] in sampled_classes
                     for ind in range(len(scan.three_d_objects))
                 ])[:MAX_NUM_OBJ])[0].tolist()
             
@@ -1067,8 +918,7 @@ class Joint3DDataset_JointDC(Dataset):
                     if self.label_map18[
                         scan.get_object_instance_label(ind)
                     ] != 39
-                    # else 'other furniture'
-                    else "others"
+                    else 'other furniture'
                     for ind in anno['target_id']
                 ]
             else:
@@ -1079,7 +929,7 @@ class Joint3DDataset_JointDC(Dataset):
                     for ind in anno['target_id']
                 ]
             anno['utterance'] = utterance
-   
+
         # step Point cloud representation
         point_cloud, augmentations, og_color = self._get_pc(anno, scan)
         offset = torch.tensor([point_cloud.shape[0]])
@@ -1112,12 +962,6 @@ class Joint3DDataset_JointDC(Dataset):
             auxi_box = np.expand_dims(auxi_box, axis=0)
         
         # step groupfree Detected boxes
-
-        all_detected_bboxes = np.zeros((MAX_NUM_OBJ, 6))
-        all_detected_bbox_label_mask = np.array([False] * MAX_NUM_OBJ)
-        detected_class_ids = np.zeros((MAX_NUM_OBJ,))
-        detected_logits = np.zeros((MAX_NUM_OBJ, NUM_CLASSES))
-
         (
             all_detected_bboxes, all_detected_bbox_label_mask,
             detected_class_ids, detected_logits
@@ -1146,10 +990,6 @@ class Joint3DDataset_JointDC(Dataset):
                 ]]
                 for ind in anno['target_id']
             ])
-
-        object_ids = np.zeros((MAX_NUM_OBJ,))
-        object_ids[:len(anno['target_id'])] = anno['target_id']
-
         ret_dict = {
             'box_label_mask': box_label_mask.astype(np.float32),
             'center_label': gt_bboxes[:, :3].astype(np.float32),
@@ -1212,43 +1052,10 @@ class Joint3DDataset_JointDC(Dataset):
                 if isinstance(anno['target_id'], int)
                 else class_ids[anno['target_id'][0]]
             ),
+            "superpoint": superpoint,
             "offset": offset,
-            "superpoint": superpoint,  # avoid bugs
-            "source_xzy": point_cloud[..., 0:3].astype(np.float32),
-            "gt_box_object_ids": object_ids.astype(np.int64)
+            "source_xzy": point_cloud[..., 0:3].astype(np.float32)
         })
-
-        # preprocess tokenizer for dense caption (not in pretrain stage)
-        reference_tokens = np.zeros((MAX_NUM_OBJ, self.max_des_len))  # [132, 32]
-        reference_masks  = np.zeros((MAX_NUM_OBJ, self.max_des_len))
-
-        if (self.split == 'train') and (anno['dataset'] == 'scannetdc'):
-            scene_caption = []
-            scan_name = anno['scan_id']
-            if scan_name in self.gathered_language:
-                for instance_id in anno['target_id']:
-                    if instance_id not in self.gathered_language[scan_name]:
-                        caption = ''
-                    else:
-                        caption = random.choice(
-                            self.gathered_language[scan_name][instance_id]
-                        )
-                    scene_caption.append(caption)
-
-            tokenizer_output = self.tokenizer_dc.batch_encode_plus(
-                scene_caption, 
-                max_length=self.max_des_len, 
-                padding='max_length', 
-                truncation='longest_first', 
-                return_tensors='np'
-            )
-            tokenizer_output['input_ids'] *= tokenizer_output['attention_mask']
-            reference_tokens[:len(anno['target_id'])] = tokenizer_output['input_ids']
-            reference_masks[:len(anno['target_id'])]  = tokenizer_output['attention_mask']
-            
-        ret_dict['reference_tokens'] = reference_tokens.astype(np.int64)
-        ret_dict['reference_masks'] = reference_masks.astype(np.float32)
-        ret_dict["scan_idx"] = np.array(index).astype(np.int64)
 
         return ret_dict
 
@@ -1543,12 +1350,3 @@ def Scene_graph_parse(annos):
         anno["auxi_entity"] = auxi_entity
     
     print('End text decoupling!')
-
-
-# if __name__ == '__main__':
-#     dataset = Joint3DDataset_JointDC()
-#     i = 0
-#     while True:
-#         print(i)
-#         dataset.__getitem__(i)
-#         i += 1
