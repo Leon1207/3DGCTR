@@ -4,8 +4,8 @@ from torch import nn, Tensor
 from pointcept.models.threedreftr.captioner_dcc.cider_scorer import Cider
 from collections import defaultdict, OrderedDict
 from typing import List, Dict
-from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER, ScanReferTokenizer
-# from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER, ScanReferTokenizer  # if in nr3d dataset
+from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER, ScanReferTokenizer  # for ScanRefer dataset
+# from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER, ScanReferTokenizer  # for Nr3D dataset
 
 
 def proposal_dimension_select(features: Tensor, indices: Tensor) -> Tensor:
