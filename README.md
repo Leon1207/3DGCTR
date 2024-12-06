@@ -43,7 +43,7 @@ sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_3DDC_joint_mle
 sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 ```
 
-- If you want to train and evaluate in Nr3D dataset, please modify some codes:
+- If you want to train and evaluate in the Nr3D dataset, please modify some codes:
 
 ```
 (i) Modifying nvocabs length from 3433 to 2937 in:
@@ -56,7 +56,7 @@ sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 - pointcept/engines/hooks/evaluator.py
 ```
 
-- Evaluation: you can change the tester in the config file
+- Evaluation: you can change the tester in the config file and evaluate all the tasks and models in **Single GPU**.
 ```
 test = dict(type="CaptionTester")  # GroundingTester
 ```
@@ -64,7 +64,7 @@ test = dict(type="CaptionTester")  # GroundingTester
 sh scripts/test.sh -p python -d scanrefer -n [NAME] -w model_best
 ```
 
-## 3. Visulization
+## 3. Visualization
 
 You can refer to [this repo](https://github.com/yigengjiang/3DGCTR-Visualization) for visualization.
 
