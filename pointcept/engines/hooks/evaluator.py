@@ -947,6 +947,9 @@ class CaptionEvaluator(HookBase):
         )
         
         self.trainer.logger.info(message)
+
+        if not os.path.exists(self.checkpoint_dir):
+            os.mkdir(self.checkpoint_dir)
         
         with open(os.path.join(self.checkpoint_dir, "corpus_val.json"), "w") as f: 
             json.dump(corpus, f, indent=4)
