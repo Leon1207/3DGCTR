@@ -40,7 +40,7 @@ sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_3DDC_joint_mle
 ```
 - SCST training on 3DDC
 ```
-sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
+sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 ```
 
 - If you want to train and evaluate in Nr3D dataset, please modify some codes:
