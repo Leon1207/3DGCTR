@@ -16,8 +16,8 @@ from pointcept.utils.misc import intersection_and_union_gpu
 from pointcept.utils.grounding_evaluator import GroundingEvaluator as Gdeval
 from pointcept.models.losses.vqa_losses import HungarianMatcher, SetCriterion, compute_hungarian_loss
 from collections import OrderedDict, defaultdict
-from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER
-# from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER
+from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER  # for ScanRefer dataset
+# from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER  # for Nr3D dataset
 from pointcept.utils.grounding_evaluator import _iou3d_par, box_cxcyczwhd_to_xyzxyz, box2points
 import pointcept.utils.capeval.bleu.bleu as capblue
 import pointcept.utils.capeval.cider.cider as capcider
