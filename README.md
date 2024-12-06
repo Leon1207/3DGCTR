@@ -43,6 +43,19 @@ sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_3DDC_joint_mle
 sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 ```
 
+- If you want to train and evaluate in Nr3D dataset, please modify some codes:
+
+```
+(i) Modifying nvocabs length from 3433 to 2937 in:
+- line 212 in pointcept/models/default.py
+- line 541 in pointcept/models/losses/vqa_losses.py
+
+(ii) Modifying the import of  SCANREFER and ScanReferTokenizer in:
+- pointcept/models/threedreftr/captioner_dcc/scst.py
+- pointcept/models/threedreftr/captioner_dcc/captioner.py
+- pointcept/engines/hooks/evaluator.py
+```
+
 - Evaluation: you can change the tester in the config file
 ```
 test = dict(type="CaptionTester")  # GroundingTester
