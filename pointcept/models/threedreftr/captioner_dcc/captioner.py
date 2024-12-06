@@ -9,8 +9,8 @@ from transformers import GPT2Config, GPT2LMHeadModel
 
 from pointcept.models.threedreftr.captioner_dcc.helper import Matcher
 from pointcept.models.threedreftr.captioner_dcc.generation_utils import generation
-from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER, ScanReferTokenizer
-# from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER, ScanReferTokenizer  # if in nr3d dataset
+from pointcept.datasets.scanrefer_jointdc_v2c import SCANREFER, ScanReferTokenizer  # for ScanRefer dataset
+# from pointcept.datasets.nr3d_jointdc_v2c import SCANREFER, ScanReferTokenizer  # for Nr3D dataset
 from pointcept.models.losses.vqa_losses import generalized_box_iou3d, box_cxcyczwhd_to_xyzxyz
 import wandb
 import numpy as np
