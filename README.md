@@ -64,11 +64,15 @@ sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [SCST_
 ```
 
 - Evaluation: you can change the tester in the config file and evaluate all the tasks and models in **Single GPU**:
-1. "GroundingTester" for testing the visual grounding task. Note that if you want to test the joint training checkpoint in the VG task, you can first copy the checkpoint file (`exp/scanrefer/[JOINT_NAME]/model`) into the pretrain cache file (`exp/scanrefer/[3DCG_NAME]/model`) and rename it as model_joint.pth, then run:
+1. "GroundingTester" for testing the visual grounding task, run:
+```
+sh scripts/test.sh -p python -d scanrefer -n [3DVG_NAME] -w model_best
+```
+★ Note that if you want to test the joint training checkpoint in the VG task, you can first copy the checkpoint file (`exp/scanrefer/[JOINT_NAME]/model`) into the pretrain cache file (`exp/scanrefer/[3DVG_NAME]/model`) and rename it as model_joint.pth, then run:
 ```
 sh scripts/test.sh -p python -d scanrefer -n [3DVG_NAME] -w model_joint
 ```
-2. "CaptionTester" for testing the dense caption task, run:
+3. "CaptionTester" for testing the dense caption task, run:
 ```
 sh scripts/test.sh -p python -d scanrefer -n [JOINT_NAME] -w model_best
 ```
