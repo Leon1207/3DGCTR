@@ -70,7 +70,7 @@ You can change the tester in the config file and evaluate all the tasks and mode
 ```
 sh scripts/test.sh -p python -d scanrefer -n [3DVG_NAME] -w model_best
 ```
-**Note that** if you want to test the joint training checkpoint in the VG task, you can first copy the checkpoint file (`exp/scanrefer/[JOINT_NAME]/model`) into the pretrain cache file (`exp/scanrefer/[3DVG_NAME]/model`) and rename it as model_joint.pth, then run:
+**Note that** if you want to test the joint training checkpoint in the VG task, you can first copy the checkpoint file (`exp/scanrefer/[JOINT_NAME]/model`) to the pretrain cache file (`exp/scanrefer/[3DVG_NAME]/model`) and rename it as model_joint.pth, then run:
 ```
 sh scripts/test.sh -p python -d scanrefer -n [3DVG_NAME] -w model_joint
 ```
