@@ -28,7 +28,7 @@ pip install -U git+https://github.com/NVIDIA/MinkowskiEngine --no-deps
 
 Please refer to [3DRefTR](https://github.com/Leon1207/3DRefTR) and [Vote2Cap-DETR](https://github.com/ch3cook-fdu/Vote2Cap-DETR) to download 3DVG and 3DDC datasets for training and evaluation, then set your [dataset path] in the config file.
 
-## 2. Train & Evaluation
+## 2. Training
 
 - Pretrain on 3DVG
 ```
@@ -62,6 +62,8 @@ sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [SCST_
 - pointcept/models/threedreftr/captioner_dcc/captioner.py
 - pointcept/engines/hooks/evaluator.py
 ```
+
+## 3. Evaluation
 
 - Evaluation: you can change the tester in the config file and evaluate all the tasks and models in **Single GPU**:
 1. "GroundingTester" for testing the visual grounding task, run:
