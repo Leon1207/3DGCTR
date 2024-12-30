@@ -173,7 +173,7 @@ data = dict(
 
 # tester
 test = dict(
-    type="GroundingTester",
+    type="CaptionTester",
     losses=['boxes', 'labels', 'contrastive_align', 'captions']
 )
 
