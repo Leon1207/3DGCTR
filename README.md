@@ -64,9 +64,14 @@ sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 ```
 
 - Evaluation: you can change the tester in the config file and evaluate all the tasks and models in **Single GPU**.
+1. Make sure which task you want to test:
+   - "GroundingTester" for testing the visual grounding task
+   - "CaptionTester" for testing the dense caption task
+   - Note that you need to modify it in `configs/scanrefer/ScanRefer_3DVG_3DDC_joint_mle.py` before you run the test code, or you should modify it in `exp/[NAME]/config.py`
 ```
-test = dict(type="CaptionTester")  # Or use "GroundingTester" for testing visual grounding task
+test = dict(type="CaptionTester") 
 ```
+2. Then run:
 ```
 sh scripts/test.sh -p python -d scanrefer -n [NAME] -w model_best
 ```
