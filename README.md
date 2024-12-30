@@ -67,7 +67,7 @@ sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 1. Make sure which task you want to test:
    - "GroundingTester" for testing the visual grounding task
    - "CaptionTester" for testing the dense caption task
-   - Note that you need to modify it in `configs/scanrefer/ScanRefer_3DVG_3DDC_joint_mle.py` before you run the test code, or you should modify it in `exp/[NAME]/config.py`
+   - Note that you need to modify it in `configs/scanrefer/ScanRefer_3DVG_3DDC_joint_mle.py` before you run the test code, or you should modify it in `exp/scanrefer/[NAME]/config.py`
 ```
 test = dict(type="CaptionTester") 
 ```
