@@ -39,6 +39,13 @@ sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_pretrain -n [N
 sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_3DDC_joint_mle -n [NAME]
 ```
 - SCST training on 3DDC
+1. First, comment out the following code in file `pointcept/datasets/scanrefer_jointdc_v2c.py` (on line #264):
+```
+# for joint training in MLE, not SCST/onlyDC
+# if split == "train":
+#     self.scan_names = SCANREFER['scene_list'][split] * 10
+```
+2. Then run:
 ```
 sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 ```
