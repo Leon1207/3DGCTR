@@ -146,5 +146,5 @@ data = dict(
 )
 
 # tester
-test = dict(type="DetTester")
+test = dict(type="CaptionTester")
 
