@@ -32,11 +32,11 @@ Please refer to [3DRefTR](https://github.com/Leon1207/3DRefTR) and [Vote2Cap-DET
 
 - Pretrain on 3DVG
 ```
-sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_pretrain -n [NAME]
+sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_pretrain -n [3DVG_NAME]
 ```
 - Joint training on 3DVG and 3DDC
 ```
-sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_3DDC_joint_mle -n [NAME]
+sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_3DDC_joint_mle -n [JOINT_NAME]
 ```
 - SCST training on 3DDC in **Single GPU**
 1. First, comment out the following code in file `pointcept/datasets/scanrefer_jointdc_v2c.py` (on line #264):
@@ -47,7 +47,7 @@ sh scripts/train.sh -p python -g 4 -d scanrefer -c ScanRefer_3DVG_3DDC_joint_mle
 ```
 2. Then run in a single GPU:
 ```
-sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
+sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [SCST_NAME]
 ```
 
 - If you want to train and evaluate in the Nr3D dataset, please modify some codes:
@@ -63,17 +63,14 @@ sh scripts/train.sh -p python -g 1 -d scanrefer -c ScanRefer_3DDC_scst -n [NAME]
 - pointcept/engines/hooks/evaluator.py
 ```
 
-- Evaluation: you can change the tester in the config file and evaluate all the tasks and models in **Single GPU**.
-1. Make sure which task you want to test:
-   - "GroundingTester" for testing the visual grounding task
-   - "CaptionTester" for testing the dense caption task
-   - Note that you need to modify it in `configs/scanrefer/ScanRefer_3DVG_3DDC_joint_mle.py` before you run the training code, or you should modify it in cache file `exp/scanrefer/[NAME]/config.py`
+- Evaluation: you can change the tester in the config file and evaluate all the tasks and models in **Single GPU**:
+1. "GroundingTester" for testing the visual grounding task. Note that if you want to test the joint training checkpoint in the VG task, you can first copy the checkpoint file (`exp/scanrefer/[JOINT_NAME]/model`) into the pretrain cache file (`exp/scanrefer/[3DCG_NAME]/model`) and rename it as model_joint.pth, then run:
 ```
-test = dict(type="CaptionTester") 
+sh scripts/test.sh -p python -d scanrefer -n [3DVG_NAME] -w model_joint
 ```
-2. Then run:
+2. "CaptionTester" for testing the dense caption task, run:
 ```
-sh scripts/test.sh -p python -d scanrefer -n [NAME] -w model_best
+sh scripts/test.sh -p python -d scanrefer -n [JOINT_NAME] -w model_best
 ```
 
 ## 3. Visualization
